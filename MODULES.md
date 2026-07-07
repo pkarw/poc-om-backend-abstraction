@@ -36,8 +36,8 @@ These upstream packages are not ported as standalone modules; their behavior is 
 
 | Module | Purpose (short) | Tier | Python | .NET | Go |
 |---|---|---|---|---|---|
-| directory | Multi-tenant directory: tenants and organizations | 1 | ⬜ | ⬜ | ⬜ |
-| auth | User accounts, sessions, roles, password resets (JWT, RBAC features) | 1 | ⬜ | ⬜ | ⬜ |
+| [directory](upstream/analysis/modules/directory.md) | Multi-tenant directory: tenants and organizations | 1 | 🔍 | 🔍 | 🔍 |
+| [auth](upstream/analysis/modules/auth.md) | User accounts, sessions, roles, password resets (JWT, RBAC features) | 1 | 🔍 | 🔍 | 🔍 |
 | api_keys | Access tokens for external API access | 1 | ⬜ | ⬜ | ⬜ |
 | entities | User-defined entities, custom fields, dynamic records | 1 | ⬜ | ⬜ | ⬜ |
 | query_index | Hybrid query layer with index maintenance | 1 | ⬜ | ⬜ | ⬜ |
