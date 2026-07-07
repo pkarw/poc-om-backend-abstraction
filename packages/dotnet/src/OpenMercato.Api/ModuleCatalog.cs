@@ -1,4 +1,5 @@
 using OpenMercato.Core.Modules;
+using OpenMercato.Modules.Auth;
 using OpenMercato.Modules.HealthCheck;
 
 namespace OpenMercato.Api;
@@ -13,5 +14,6 @@ public static class ModuleCatalog
     public static ModuleRegistry CreateRegistry() => new(new IModule[]
     {
         new HealthCheckModule(),
+        new AuthModule(),
     });
 }

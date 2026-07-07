@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Core", "src\Ope
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Modules.HealthCheck", "src\OpenMercato.Modules.HealthCheck\OpenMercato.Modules.HealthCheck.csproj", "{6915D564-177D-4E3C-8020-FB95C82997A0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Modules.Auth", "src\OpenMercato.Modules.Auth\OpenMercato.Modules.Auth.csproj", "{9F3B2E71-4C8A-4F2D-9A6E-1B2C3D4E5F60}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Api", "src\OpenMercato.Api\OpenMercato.Api.csproj", "{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Worker", "src\OpenMercato.Worker\OpenMercato.Worker.csproj", "{347B79A4-7818-4EF1-A01A-7D854BDC43A0}"
@@ -26,6 +28,10 @@ Global
 		{6915D564-177D-4E3C-8020-FB95C82997A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6915D564-177D-4E3C-8020-FB95C82997A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6915D564-177D-4E3C-8020-FB95C82997A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F3B2E71-4C8A-4F2D-9A6E-1B2C3D4E5F60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F3B2E71-4C8A-4F2D-9A6E-1B2C3D4E5F60}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F3B2E71-4C8A-4F2D-9A6E-1B2C3D4E5F60}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F3B2E71-4C8A-4F2D-9A6E-1B2C3D4E5F60}.Release|Any CPU.Build.0 = Release|Any CPU
 		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Release|Any CPU.ActiveCfg = Release|Any CPU

@@ -4,6 +4,7 @@ using OpenMercato.Core.Configuration;
 using OpenMercato.Core.Data;
 using OpenMercato.Core.Events;
 using OpenMercato.Core.Queue;
+using OpenMercato.Modules.Auth;
 using StackExchange.Redis;
 
 DotEnv.Load();
@@ -16,7 +17,11 @@ var registry = ModuleCatalog.CreateRegistry();
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(registry);
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(config.NpgsqlConnectionString, npgsql => npgsql.MigrationsAssembly("OpenMercato.Api")));
+    options
+        .UseNpgsql(config.NpgsqlConnectionString, npgsql => npgsql.MigrationsAssembly("OpenMercato.Api"))
+        // Modules with byte-exact parity ship hand-written raw-SQL migrations, so the EF model
+        // snapshot intentionally does not describe their tables. Ignore the resulting drift warning.
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.RedisUrl)));
 builder.Services.AddSingleton<IJobQueue>(sp =>
@@ -30,6 +35,9 @@ var app = builder.Build();
 
 // The api container entrypoint applies migrations before serving traffic.
 await MigrateAsync(app);
+
+// Auth: env-gated, idempotent superadmin bootstrap (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
+await AuthBootstrapSeeder.RunAsync(app.Services, app.Logger);
 
 // Liveness: must not touch Postgres or Redis.
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", service = "dotnet-api" }));
