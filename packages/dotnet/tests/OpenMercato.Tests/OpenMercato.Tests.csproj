@@ -22,6 +22,7 @@
     <ProjectReference Include="../../src/OpenMercato.Modules.HealthCheck/OpenMercato.Modules.HealthCheck.csproj" />
     <ProjectReference Include="../../src/OpenMercato.Modules.Auth/OpenMercato.Modules.Auth.csproj" />
     <ProjectReference Include="../../src/OpenMercato.Modules.Directory/OpenMercato.Modules.Directory.csproj" />
+    <ProjectReference Include="../../src/OpenMercato.Modules.Dashboards/OpenMercato.Modules.Dashboards.csproj" />
   </ItemGroup>
 
 </Project>

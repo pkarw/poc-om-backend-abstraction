@@ -1,5 +1,6 @@
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth;
+using OpenMercato.Modules.Dashboards;
 using OpenMercato.Modules.Directory;
 using OpenMercato.Modules.HealthCheck;
 
@@ -17,5 +18,6 @@ public static class ModuleCatalog
         new HealthCheckModule(),
         new AuthModule(),
         new DirectoryModule(),
+        new DashboardsModule(),
     });
 }
