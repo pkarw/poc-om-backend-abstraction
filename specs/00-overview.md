@@ -48,6 +48,7 @@ Anything on those wires — HTTP shapes, Postgres DDL and rows, Redis keys and j
 | [08-parity-testing.md](08-parity-testing.md) | `PARITY-R*` | How 1:1 is **proven**: golden request/response testing, schema/queue/event parity, authz matrix, the parity report format |
 | [09-technology-package-standard.md](09-technology-package-standard.md) | `TECHPKG-R*` | The canonical shape of every `packages/<tech>/`: layout, Makefile, docker-compose, AGENTS.md/README outlines, queue honesty rule |
 | [10-module-contract-parity.md](10-module-contract-parity.md) | `MODCONTRACT-R*` | The full per-module declaration surface, declared identically in every tech: RBAC feature declarations, notification types, custom-field sets / custom entities, declared typed events — module abstraction + registry aggregation, and the declare-now rule when delivery/storage engines are deferred |
+| [11-testbench.md](11-testbench.md) | `TESTBENCH-R*` | Running a *real* upstream Open Mercato against a port: shared Postgres (upstream owns schema), the port running migrations-off, a ported-module-driven reverse-proxy seam, shared `JWT_SECRET` + email lookup-hash pepper, and the honest placeholder-data rule |
 
 Specs 01–07 each follow the same skeleton: **Scope → Requirements (numbered, MUST/SHOULD/MAY per RFC 2119) → Contracts (exact wire/persisted formats) → Concept mapping (upstream TS concept → tech-agnostic concept) → Allowed deviations → Verification**. Requirement IDs are stable and are cited by port contracts, ADRs, and parity reports.
 

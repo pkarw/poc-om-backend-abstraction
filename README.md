@@ -9,16 +9,53 @@ Open Mercato's core is TypeScript + Next.js. Users keep asking: *"can the API ru
 3. 📦 **Technology packages** — one runnable API + worker skeleton per technology, all speaking PostgreSQL + Redis + BullMQ-compatible queues.
 4. 🔭 **Upstream tracking** — a pinned upstream commit and analysis docs, refreshable as Open Mercato core evolves.
 
+**Status:** the **.NET port** has three modules working end-to-end — **auth**, **directory**, **dashboards** (105 tests pass) — plus a CLI, OM-identical seeding, and a **testbench** that runs the *real* Open Mercato UI against the .NET API. See [`GETTING_STARTED.md`](GETTING_STARTED.md).
+
+## 🏃 Try it now
+
+Fastest path — the **.NET port** standalone (needs Docker):
+
+```bash
+cd packages/dotnet && make up          # postgres:17 + redis:7 + api + worker → :8080
+```
+
+Once it's up, log in as a seeded user and read the dashboard the port serves:
+
+```bash
+# login → 200 {"ok":true,"token":"<JWT>","redirect":"/backend"} + auth cookies
+curl -s http://localhost:8080/api/auth/login \
+  -d 'email=superadmin@acme.com' -d 'password=secret'
+
+# dashboard layout for a bearer token (paste the token above)
+curl -s http://localhost:8080/api/dashboards/layout -H "Authorization: Bearer <token>"
+```
+
+Seeded by OM-identical `mercato init`: `superadmin@acme.com` / `admin@acme.com` / `employee@acme.com`, all password `secret`.
+
+The **CLI** (module-contributed commands + built-ins) drives seeding and admin tasks:
+
+```bash
+cd packages/dotnet
+make greenfield                        # drop + migrate + seed the Acme tenant/org/users
+make cli ARGS="list-users"             # add-user, set-password, add-org, list-orgs, dashboards seed-defaults, …
+```
+
+### 🧪 Run real Open Mercato against the port
+
+The [`testbench/`](testbench/README.md) boots a *real* Open Mercato deployment and the .NET API against **one shared Postgres**: OM owns the schema, the port runs migrations-off, and a reverse proxy routes the ported `/api/*` (auth, directory, dashboards) to .NET while OM serves everything else. Shared `JWT_SECRET` + email lookup-hash pepper make auth interchangeable — you log into the real OM UI and the .NET port serves login and the dashboard. Design spec: [`specs/11-testbench.md`](specs/11-testbench.md). Full walkthrough: [`GETTING_STARTED.md`](GETTING_STARTED.md).
+
 ## 🗺️ Repository map
 
 | Path | What lives there |
 |---|---|
-| [`specs/`](specs/) | Normative, tech-agnostic specs (`00`–`09`). Start at [`specs/00-overview.md`](specs/00-overview.md) |
+| [`specs/`](specs/) | Normative, tech-agnostic specs (`00`–`11`). Start at [`specs/00-overview.md`](specs/00-overview.md) |
 | [`upstream/`](upstream/) | Pinned upstream reference: [`UPSTREAM.md`](upstream/UPSTREAM.md) + subsystem analyses in [`upstream/analysis/`](upstream/analysis/) |
 | [`.claude/skills/`](.claude/skills/) | The 5 porting skills (see below) |
 | [`packages/python/`](packages/python/) | 🐍 FastAPI + SQLAlchemy/Alembic + official BullMQ client |
-| [`packages/dotnet/`](packages/dotnet/) | 🟣 ASP.NET Core minimal APIs + EF Core |
+| [`packages/dotnet/`](packages/dotnet/) | 🟣 ASP.NET Core minimal APIs + EF Core — **auth + directory + dashboards ported**, CLI, OM-identical seeding |
 | [`packages/golang/`](packages/golang/) | 🐹 chi + pgx + golang-migrate |
+| [`testbench/`](testbench/README.md) | 🧪 Run a real Open Mercato UI against the .NET port over one shared Postgres |
+| [`GETTING_STARTED.md`](GETTING_STARTED.md) | 🏁 Step-by-step: run the port standalone, run OM against it, port the next module |
 | [`MODULES.md`](MODULES.md) | 📊 Porting tracker — module × technology status matrix |
 | [`scripts/sync-upstream.sh`](scripts/sync-upstream.sh) | Refresh the upstream clone and diff against the pinned commit |
 | [`AGENTS.md`](AGENTS.md) | Rules of the road for AI agents working in this repo |
@@ -67,4 +104,4 @@ Typical flow — port a module to two technologies **simultaneously**:
 
 ## 📊 Status
 
-See [`MODULES.md`](MODULES.md) for the live module × technology matrix. Current phase: **foundation** — specs, skills and runnable skeletons are in place; module porting starts with the infrastructure tier (auth, directory, entities, query engine).
+See [`MODULES.md`](MODULES.md) for the live module × technology matrix. The **.NET port** leads: **auth**, **directory** and **dashboards** are ported and working (105 tests pass), with a CLI, OM-identical seeding, and the [`testbench/`](testbench/README.md) that runs a real Open Mercato UI against the port. Next up across all technologies: the rest of the infrastructure tier (`entities`, `query_index`, `api_keys`) then the domain modules.

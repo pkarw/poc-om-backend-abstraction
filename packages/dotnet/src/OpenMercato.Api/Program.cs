@@ -69,7 +69,8 @@ static async Task MigrateAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    const int maxAttempts = 10;
+    // Tolerate a cold Postgres on first `make up` (DNS + init can exceed 20s).
+    const int maxAttempts = 30;
     for (var attempt = 1; ; attempt++)
     {
         try

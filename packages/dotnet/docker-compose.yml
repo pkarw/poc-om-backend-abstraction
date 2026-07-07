@@ -29,7 +29,8 @@ services:
 
   api:
     build: .
-    # Entrypoint applies EF Core migrations before serving (see Program.cs).
+    # Entrypoint applies EF Core migrations, then (because OM_INIT_SUPERADMIN_* are set)
+    # seeds the Open-Mercato-identical Acme dataset, so `make up` is login-ready. See Program.cs.
     environment:
       DATABASE_URL: postgres://mercato:mercato@postgres:5432/mercato
       REDIS_URL: redis://redis:6379
@@ -37,6 +38,9 @@ services:
       QUEUE_REDIS_URL: redis://redis:6379
       JWT_SECRET: dev-secret-change-me
       PORT: "8080"
+      # Single-command startup seeds superadmin@acme.com / secret (+ admin@, employee@).
+      OM_INIT_SUPERADMIN_EMAIL: superadmin@acme.com
+      OM_INIT_SUPERADMIN_PASSWORD: secret
     ports:
       - "8080:8080"
     depends_on:
