@@ -38,11 +38,21 @@ registry.ConfigureServices(builder.Services);
 var app = builder.Build();
 
 // The api container entrypoint applies migrations before serving traffic.
-await MigrateAsync(app);
+// In the OM testbench (docker-compose.testbench), Open Mercato OWNS the shared schema and seeds
+// it, so the .NET API runs migrations-off (OM_SKIP_MIGRATIONS=1) and does not seed. Its byte-exact
+// ports read/write the same auth/directory/dashboards tables OM created.
+var skipMigrations = (Environment.GetEnvironmentVariable("OM_SKIP_MIGRATIONS") ?? "")
+    .Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
+if (skipMigrations)
+    app.Logger.LogInformation("OM_SKIP_MIGRATIONS set — running against an externally-owned schema (no migrate, no seed).");
+else
+{
+    await MigrateAsync(app);
 
-// Env-gated, idempotent boot seeding of the full Acme dataset (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
-// Identical to CLI `init`/`seed` — see OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.
-await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
+    // Env-gated, idempotent boot seeding of the full Acme dataset (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
+    // Identical to CLI `init`/`seed` — see OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.
+    await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
+}
 
 // Liveness: must not touch Postgres or Redis.
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", service = "dotnet-api" }));

@@ -2,14 +2,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Restore first for layer caching.
+# Restore first for layer caching. Copy the solution + every project file (each
+# ported module adds a project, so copy them all rather than listing each).
 COPY OpenMercato.sln ./
-COPY src/OpenMercato.Core/OpenMercato.Core.csproj src/OpenMercato.Core/
-COPY src/OpenMercato.Modules.HealthCheck/OpenMercato.Modules.HealthCheck.csproj src/OpenMercato.Modules.HealthCheck/
-COPY src/OpenMercato.Api/OpenMercato.Api.csproj src/OpenMercato.Api/
-COPY src/OpenMercato.Worker/OpenMercato.Worker.csproj src/OpenMercato.Worker/
-COPY tests/OpenMercato.Tests/OpenMercato.Tests.csproj tests/OpenMercato.Tests/
-RUN dotnet restore OpenMercato.sln
+COPY src/ ./src/
+COPY tests/ ./tests/
+RUN find . -name '*.cs' -not -name '*.csproj' -delete 2>/dev/null; \
+    dotnet restore OpenMercato.sln
 
 COPY . .
 RUN dotnet publish src/OpenMercato.Api -c Release -o /out/api

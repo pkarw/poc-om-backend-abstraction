@@ -1,0 +1,7 @@
+# Modules the .NET API serves in the testbench (one id per line).
+# The proxy routes /api/<id>/* to the .NET service; everything else goes to OM.
+# Add a line here when you port a module to .NET, then run ./gen-proxy.sh.
+# Keep in sync with the ✅/🧪 .NET column in ../MODULES.md.
+auth
+directory
+dashboards

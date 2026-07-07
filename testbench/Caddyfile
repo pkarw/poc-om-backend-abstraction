@@ -1,0 +1,33 @@
+# Testbench reverse proxy — routes ported module APIs to the .NET service,
+# everything else to the real Open Mercato app. Regenerate the matcher below
+# from MODULES.md with ./gen-proxy.sh when you port another module.
+#
+# Architecture: OM and the .NET API SHARE one Postgres. OM owns + migrates the
+# full schema and seeds it (`mercato init`); the .NET API runs migrations-off
+# (OM_SKIP_MIGRATIONS=1) and serves only its ported modules. Both share JWT_SECRET
+# and the email-hash pepper, so a JWT/session issued by .NET is accepted by OM's
+# server components and vice versa.
+
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	# --- BEGIN generated ported-module routes (./gen-proxy.sh) ---
+	@ported path /api/auth/* /api/directory/* /api/dashboards/*
+	handle @ported {
+		reverse_proxy dotnet-api:8080
+	}
+	# --- END generated ported-module routes ---
+
+	# Everything else (OM pages, its server components, and all non-ported /api/*)
+	handle {
+		reverse_proxy om-app:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

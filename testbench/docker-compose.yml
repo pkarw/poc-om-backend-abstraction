@@ -1,0 +1,106 @@
+name: om-testbench
+
+# Run real Open Mercato against the ported .NET API.
+#
+#   OM (om-app)  ── serves pages + all NON-ported /api/* ──┐
+#                                                          ├── one shared Postgres + Redis
+#   .NET (dotnet-api) ── serves ported /api/* ─────────────┘
+#   caddy ── front proxy: ported /api/* -> dotnet-api, everything else -> om-app
+#
+# OM owns + migrates the schema and seeds it (mercato init). The .NET API runs
+# migrations-off and its byte-exact ports read/write the same tables.
+# Both share JWT_SECRET + LOOKUP_HASH_PEPPER so auth is interchangeable.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17   # same image OM uses (pgvector)
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mercato}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mercato}
+      POSTGRES_DB: ${POSTGRES_DB:-mercato}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mercato} -d ${POSTGRES_DB:-mercato}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # The real Open Mercato app. Build its image from your open-mercato checkout first:
+  #   cd <open-mercato> && docker build -t open-mercato/app:local .
+  # OM applies migrations + `mercato init` on boot (single-command startup).
+  om-app:
+    image: ${OM_APP_IMAGE:-open-mercato/app:local}
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD:-mercato}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: async
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
+      OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # The ported .NET API. Runs migrations-off — OM owns the schema. Serves ONLY the
+  # ported modules; the proxy sends only their /api paths here.
+  dotnet-api:
+    build:
+      context: ../packages/dotnet
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD:-mercato}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      OM_SKIP_MIGRATIONS: "1"
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  dotnet-worker:
+    build:
+      context: ../packages/dotnet
+    command: ["dotnet", "/app/worker/OpenMercato.Worker.dll"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD:-mercato}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      OM_SKIP_MIGRATIONS: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${TESTBENCH_PORT:-8088}:80"
+    depends_on:
+      - om-app
+      - dotnet-api
+
+volumes:
+  pgdata:
