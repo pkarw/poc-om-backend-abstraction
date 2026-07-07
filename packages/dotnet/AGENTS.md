@@ -151,6 +151,31 @@ after `DotEnv.Load()` (real env vars override `.env`).
 | `make worker`  | `dotnet run --project src/OpenMercato.Worker`                                        |
 | `make migrate` | `dotnet ef database update --project src/OpenMercato.Api --startup-project src/OpenMercato.Api` |
 | `make test`    | `dotnet test OpenMercato.sln`                                                        |
+| `make init`      | `dotnet run --project src/OpenMercato.Cli -- init` (migrate + seed the Acme dataset — upstream `mercato init`) |
+| `make greenfield`| `dotnet run --project src/OpenMercato.Cli -- greenfield --yes` (DROP + recreate schema, migrate, seed) |
+| `make seed`      | `dotnet run --project src/OpenMercato.Cli -- seed` (OM-parity seeder only, idempotent)  |
+| `make cli ARGS="…"` | passthrough to the global CLI, e.g. `make cli ARGS="add-user --email a@b.c --password Secret1! --organizationId <id>"` |
+
+### Global CLI (`OpenMercato.Cli`)
+
+`mercato <command> [args]` — a module-aware console host that reuses
+`ModuleCatalog.CreateRegistry()` + the shared `AppDbContext` wiring, aggregates
+the built-in commands with every module's `IModule.CliCommands` and dispatches by
+name (parallels upstream `packages/cli`). Redis is optional (never blocks the CLI).
+
+- Built-ins: `migrate`, `init`, `greenfield`, `seed`.
+- Auth module: `add-user`, `set-password`, `list-users`.
+- Directory module: `add-org`, `list-orgs`.
+
+`init`/`greenfield`/`seed` and the env-gated API boot seeder all run the same
+OM-parity `InitialTenantSeeder`, producing the identical Acme dataset (1 tenant
+"Acme Corp Tenant", root org slug `acme`, roles employee/admin/superadmin, users
+superadmin@/admin@/employee@acme.com password `secret`, ACLs per module
+`DefaultRoleFeatures`). See ADR 0013.
+
+A module contributes CLI commands by implementing `ICliCommand`
+(`OpenMercato.Core.Modules`) and returning them from `IModule.CliCommands`; add
+seedable per-role features via `IModule.DefaultRoleFeatures` (upstream `setup.ts`).
 
 Adding a migration:
 `dotnet ef migrations add <Name> --project src/OpenMercato.Api --startup-project src/OpenMercato.Api`
@@ -166,3 +191,4 @@ Adding a migration:
 | [0003](docs/decisions/0003-fluentvalidation.md)                 | FluentValidation as the Zod equivalent      |
 | [0004](docs/decisions/0004-queue-bullmq-compatibility.md)       | Queue abstraction + BullMQ compat strategy  |
 | [0005](docs/decisions/0005-solution-layout.md)                  | Solution layout (Core/Api/Worker/Modules)   |
+| [0013](docs/decisions/0013-cli-and-seeding-parity.md)           | Global CLI + OM-parity initial-tenant seeder |

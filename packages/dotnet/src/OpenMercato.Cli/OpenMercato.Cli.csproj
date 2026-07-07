@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>OpenMercato.Cli</AssemblyName>
+    <RootNamespace>OpenMercato.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- References the API host to reuse ModuleCatalog.CreateRegistry(), the AppConfig/DbContext
+         wiring and (critically) the OpenMercato.Api migrations assembly. -->
+    <ProjectReference Include="../OpenMercato.Api/OpenMercato.Api.csproj" />
+  </ItemGroup>
+
+</Project>

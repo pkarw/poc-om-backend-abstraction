@@ -18,6 +18,7 @@
     <ProjectReference Include="../OpenMercato.Core/OpenMercato.Core.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.HealthCheck/OpenMercato.Modules.HealthCheck.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.Auth/OpenMercato.Modules.Auth.csproj" />
+    <ProjectReference Include="../OpenMercato.Modules.Directory/OpenMercato.Modules.Directory.csproj" />
   </ItemGroup>
 
 </Project>

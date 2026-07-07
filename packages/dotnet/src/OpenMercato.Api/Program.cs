@@ -40,8 +40,9 @@ var app = builder.Build();
 // The api container entrypoint applies migrations before serving traffic.
 await MigrateAsync(app);
 
-// Auth: env-gated, idempotent superadmin bootstrap (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
-await AuthBootstrapSeeder.RunAsync(app.Services, app.Logger);
+// Env-gated, idempotent boot seeding of the full Acme dataset (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
+// Identical to CLI `init`/`seed` — see OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.
+await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
 
 // Liveness: must not touch Postgres or Redis.
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", service = "dotnet-api" }));

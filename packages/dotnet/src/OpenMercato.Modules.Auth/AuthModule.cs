@@ -90,6 +90,21 @@ public sealed class AuthModule : IModule
     // engine, but declares no field SETS — so the default (empty) IModule.CustomFieldSets
     // is correct and intentionally not overridden here.
 
+    /// <summary>Default role features (upstream setup.ts): admin gets the whole auth namespace.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultRoleFeatures { get; } =
+        new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["admin"] = new[] { "auth.*" },
+        };
+
+    /// <summary>CLI subcommands (upstream auth cli.ts): add-user, set-password, list-users.</summary>
+    public IReadOnlyList<ICliCommand> CliCommands { get; } = new ICliCommand[]
+    {
+        new OpenMercato.Modules.Auth.Cli.AddUserCommand(),
+        new OpenMercato.Modules.Auth.Cli.SetPasswordCommand(),
+        new OpenMercato.Modules.Auth.Cli.ListUsersCommand(),
+    };
+
     public void ConfigureServices(IServiceCollection services)
     {
         // Foundation crypto/JWT/session primitives (stateless, read env/AppConfig at construction).

@@ -5,6 +5,7 @@ using OpenMercato.Core.Events;
 using OpenMercato.Core.Modules;
 using OpenMercato.Core.Queue;
 using OpenMercato.Modules.Auth;
+using OpenMercato.Modules.Directory;
 using OpenMercato.Modules.HealthCheck;
 using StackExchange.Redis;
 
@@ -16,6 +17,7 @@ var registry = new ModuleRegistry(new IModule[]
 {
     new HealthCheckModule(),
     new AuthModule(),
+    new DirectoryModule(),
 });
 
 var builder = Host.CreateApplicationBuilder(args);

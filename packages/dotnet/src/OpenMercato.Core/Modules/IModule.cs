@@ -58,4 +58,20 @@ public interface IModule
     /// <summary>Typed events the module declares (upstream events.ts). Empty by default.</summary>
     IReadOnlyList<EventDeclaration> DeclaredEvents =>
         Array.Empty<EventDeclaration>();
+
+    /// <summary>
+    /// CLI subcommands the module contributes (upstream cli.ts default export). Discovered and
+    /// dispatched by the global CLI host (OpenMercato.Cli). Empty by default.
+    /// </summary>
+    IReadOnlyList<ICliCommand> CliCommands =>
+        Array.Empty<ICliCommand>();
+
+    /// <summary>
+    /// Per-role default RBAC features seeded on a fresh tenant (upstream setup.ts
+    /// <c>defaultRoleFeatures</c>). Keys are role names ("superadmin"/"admin"/"employee" or custom);
+    /// values are feature ids/wildcards (e.g. "auth.*") stored verbatim into role_acls.features_json.
+    /// Empty by default.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultRoleFeatures =>
+        new Dictionary<string, IReadOnlyList<string>>();
 }

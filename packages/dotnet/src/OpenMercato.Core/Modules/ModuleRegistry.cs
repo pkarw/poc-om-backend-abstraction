@@ -21,6 +21,13 @@ public sealed class ModuleRegistry
 
     public IReadOnlyList<IModule> Modules { get; }
 
+    /// <summary>
+    /// Stable signature of the registered module set (ordered ids). Used as part of the EF model
+    /// cache key so distinct registries (e.g. per-test) never collide on the shared AppDbContext's
+    /// globally-cached model (which is otherwise keyed by context CLR type alone).
+    /// </summary>
+    public string ModelCacheKey => string.Join(",", Modules.Select(m => m.Id));
+
     public IReadOnlyList<string> AclFeatures =>
         Modules.SelectMany(m => m.AclFeatures).Distinct().ToList();
 
@@ -58,6 +65,34 @@ public sealed class ModuleRegistry
     /// <summary>Custom-field sets flattened across modules (upstream ce.ts / data/fields.ts).</summary>
     public IReadOnlyList<CustomFieldSet> AllCustomFieldSets =>
         Modules.SelectMany(m => m.CustomFieldSets).ToList();
+
+    /// <summary>
+    /// Per-role default features merged across every module (upstream ensureDefaultRoleAcls: it
+    /// concatenates each module's setup.defaultRoleFeatures per role). Preserves module registration
+    /// order and dedupes features per role (parity with the Set-based merge upstream).
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> MergedDefaultRoleFeatures
+    {
+        get
+        {
+            var merged = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var module in Modules)
+            {
+                foreach (var (role, features) in module.DefaultRoleFeatures)
+                {
+                    if (!merged.TryGetValue(role, out var list))
+                    {
+                        list = new List<string>();
+                        merged[role] = list;
+                    }
+                    foreach (var feature in features)
+                        if (!list.Contains(feature))
+                            list.Add(feature);
+                }
+            }
+            return merged.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value, StringComparer.Ordinal);
+        }
+    }
 
     private List<T> FlattenUnique<T>(
         Func<IModule, IEnumerable<T>> select,
