@@ -21,6 +21,10 @@ var registry = new ModuleRegistry(new IModule[]
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(registry);
+// Declared-surface catalogs built from module declarations (upstream notifications.ts / ce.ts).
+// PORT-TODO: delivery/EAV-storage engines arrive with the notifications/entities module ports.
+builder.Services.AddSingleton<INotificationCatalog, NotificationCatalog>();
+builder.Services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
 // The worker consumes the queue connection (QUEUE_REDIS_URL, defaults to REDIS_URL).
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.QueueRedisUrl)));

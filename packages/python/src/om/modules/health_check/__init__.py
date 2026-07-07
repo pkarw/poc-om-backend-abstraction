@@ -24,4 +24,10 @@ MODULE = Module(
         ),
     ],
     acl_features=features,
+    # Declaration surfaces (spec 10). health_check declares none — empty, not
+    # omitted, so the contract shape matches every other module.
+    notification_types=[],
+    custom_field_sets=[],
+    custom_entities=[],
+    declared_events=[],
 )

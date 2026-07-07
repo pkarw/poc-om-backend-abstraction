@@ -11,6 +11,7 @@ Implement the module's port contract in `packages/<tech>/`, with observable beha
 
 - **Observable behavior is 1:1** (AGENTS.md rule 3): API paths, methods, status codes, JSON envelopes, auth semantics, Postgres table/column names, queue names, event names — exactly as the contract states. No "improvements" on the wire.
 - **Internals are idiomatic** (rule 4): use the target language's best validation/ORM/DI patterns per `packages/<tech>/AGENTS.md`. Record every notable deviation from the TS structure as an ADR.
+- **Declare the full module surface — declare-now** (`specs/10-module-contract-parity.md`): a ported module MUST declare its complete contract surface — **RBAC feature declarations, notification types, custom-field sets / custom entities, and declared typed events** — using the target package's module-contract mechanism (see `packages/<tech>/AGENTS.md`), mirroring upstream's `acl.ts` / `notifications.ts` / `ce.ts`+`data/fields.ts` / `events.ts`. These are **declared even when the delivery/storage engine is deferred**: the declarations (ids, titles, severities, expiry, templates, field-set shapes, event names + payload shapes) are part of the wire/registry contract and must land now; only the runtime that *acts* on them (notification delivery, EAV persistence, event fan-out) may be stubbed and tracked. Never drop a declaration because its engine isn't built yet.
 - The contract is the requirement source; `specs/*.md` bind cross-cutting behavior; the upstream TS source is reference only (consult it when the contract is ambiguous — and then fix the contract too).
 
 ## Procedure
@@ -36,8 +37,13 @@ Write a plan file to the scratchpad (not the repo) that all subagents will recei
 - route registration mechanism and the exact path+method+auth metadata table,
 - event names, queue names, subscriber/worker ids (verbatim from the contract),
 - validation approach (language-native lib; error responses must still match the contract's status+body),
-- ACL feature ids and where they are declared,
-- test plan: which contract rows get unit tests vs route tests.
+- **module-contract declarations (declare-now, per `specs/10`)** — where and how the package's module-contract mechanism carries them (see `packages/<tech>/AGENTS.md`):
+  - ACL/RBAC feature ids + titles,
+  - notification types (type id, severity, `expiresAfterHours`, template keys) — verbatim from the contract's Notifications section,
+  - custom-field sets and custom entities attached to entities (field-set keys, field names/types, target entity) — from the contract's "Custom entities & field sets",
+  - declared typed events (event name + payload shape) — the module's `events.ts` surface, distinct from where each event is *emitted*,
+  - for each: note whether the acting engine is deferred (declared-now, engine stubbed) so it lands in the registry regardless,
+- test plan: which contract rows get unit tests vs route tests, plus a check that every declaration surfaces in the package's aggregated registry.
 
 Update `MODULES.md`: set `<module-id>` × `<tech>` to 🚧 (porting).
 
@@ -49,7 +55,17 @@ After the plan is written, spawn **parallel subagents**, each receiving the plan
 - **Subagent B — routes + validation + services**: every contract route with identical path/method/status/envelope; auth + `requireFeatures` metadata wired into the package's dispatcher; request validation matching the contract's field tables (including error status+body); the internal services/commands the routes need.
 - **Subagent C — workers + subscribers + events**: subscribers bound to the exact event names; workers on the exact queue names consuming/producing the standard job envelope `{id,payload,createdAt}` with BullMQ-compatible options (see `specs/04-events-and-queues.md`); every event emission the contract lists.
 
-Each subagent also writes the tests for its slice. Sequence-sensitive leftovers (ACL feature declaration, setup/seed hooks, DI registration, CLI commands, enabling the module in the package's composition config) are integrated by **you** after the subagents return — these touch shared files and must not be parallelized.
+Each subagent also writes the tests for its slice. Subagent C also declares the module's **typed event surface** (`events.ts` equivalent — event names + payload shapes) via the package's module-contract mechanism, independent of whether every event's delivery is wired yet (declare-now, per `specs/10`).
+
+Sequence-sensitive leftovers are integrated by **you** after the subagents return — these touch shared files and must not be parallelized:
+
+- ACL/RBAC **feature declaration**,
+- **notification-type declaration** (`notifications.ts` equivalent — declare the types even if delivery is deferred),
+- **custom-field-set / custom-entity declaration** (`ce.ts` + `data/fields.ts` equivalent — declare the field sets even if EAV storage is deferred),
+- confirming the **declared event surface** is registered in the module contract,
+- setup/seed hooks, DI registration, CLI commands, and enabling the module in the package's composition config.
+
+Every declaration MUST use the package's module-contract mechanism (`packages/<tech>/AGENTS.md` + `specs/10`) so the package's registry aggregation picks it up. A declaration whose acting engine is deferred is still required now — record the deferred engine, never the declaration itself, in the deferral notes.
 
 ### 5. Integrate and verify locally
 
@@ -69,4 +85,4 @@ For each notable idiomatic deviation (different validation lib, ORM pattern, DI 
 
 ### 8. Report
 
-Return: files created/changed (paths), migration name, routes implemented (count + any contract rows deliberately deferred, with reasons), ADRs written, test results, and the follow-up parity command.
+Return: files created/changed (paths), migration name, routes implemented (count + any contract rows deliberately deferred, with reasons), the **declared module-contract surface** (feature ids, notification types, custom-field sets, declared events — with any deferred *engines* flagged), ADRs written, test results, and the follow-up parity command.

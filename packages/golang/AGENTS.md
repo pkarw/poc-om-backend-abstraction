@@ -48,11 +48,55 @@ PascalCase; handler factories are unexported (`handleGetHealthCheck`).
 | `modules/<m>/subscribers/*.ts` | `registry.Subscriber{Event, Handler}` entries in `Module()`, handlers in `subscribers.go` |
 | `modules/<m>/workers/*.ts` | `registry.Worker{Queue, JobName, Handler}` entries in `Module()`, handlers in `worker.go` |
 | `modules/<m>/acl.ts` feature ids | `Features []string` on `registry.Module` |
+| `modules/<m>/notifications.ts` (`notificationTypes`) | `NotificationTypes []registry.NotificationType` on `registry.Module` |
+| `modules/<m>/data/fields.ts` (`fieldSets`) | `CustomFieldSets []registry.CustomFieldSet` on `registry.Module` |
+| `modules/<m>/ce.ts` (custom entities) | `CustomEntities []registry.CustomEntity` on `registry.Module` |
+| `modules/<m>/events.ts` (`createModuleEvents`) | `DeclaredEvents []registry.EventDef` on `registry.Module` |
 | `modules/<m>/di.ts` (Awilix) | `registry.Deps` struct passed to `Module(deps)`; modules close over it |
 | MikroORM migrations | SQL files in `migrations/` (golang-migrate) |
 | generated module registry | `internal/modules/modules.go` `All()` |
 | `packages/queue` strategies | `internal/platform/queue` (`QUEUE_STRATEGY=local|redis`) |
 | `packages/events` | `internal/platform/events.Bus` (in-process; distributed = porting task) |
+
+### Module declaration surfaces (spec 10 — module contract parity)
+
+`registry.Module` exposes **one consistent place per module** for the four
+upstream declaration surfaces, mirroring the .NET `IModule` and Python `Module`
+dataclass. Every module declares **all four** — empty slices when it declares
+none, not nil-by-omission — so the shape is identical across modules and the
+`registry` aggregators are total. "Declare now, engine later": declaration is
+mandatory even where the consuming engine (notifications, EAV) is still a
+PORT-TODO.
+
+```go
+func Module(deps *registry.Deps) registry.Module {
+    return registry.Module{
+        ID:       ModuleID,
+        Routes:   func(r chi.Router) { /* ... */ },
+        Features: []string{"widgets.view", "widgets.manage"},        // acl.ts
+        NotificationTypes: []registry.NotificationType{               // notifications.ts
+            {Type: "widgets.assigned", Module: ModuleID, Severity: "info",
+             TitleKey: "widgets.assigned.title", ExpiresAfterHours: 72},
+        },
+        CustomFieldSets: []registry.CustomFieldSet{                   // data/fields.ts
+            {EntityID: "widgets:widget", Source: ModuleID,
+             Fields: []registry.CustomField{{Key: "priority", Kind: "integer"}}},
+        },
+        CustomEntities: []registry.CustomEntity{                      // ce.ts
+            {ID: "widgets:tag", Label: "Tag"},
+        },
+        DeclaredEvents: []registry.EventDef{                          // events.ts
+            {Name: "widgets.widget.created", Persistent: true},
+        },
+    }
+}
+```
+
+The runtime aggregates each surface across enabled modules, in enabled-module
+order, via `registry.Features`, `registry.NotificationTypes`,
+`registry.CustomFieldSets`, `registry.CustomEntities`, `registry.DeclaredEvents`
+(all take `[]registry.Module`) — the analogue of upstream's `Module[]` →
+registry fold.
 
 ## Module Porting Rules
 
@@ -61,7 +105,11 @@ PascalCase; handler factories are unexported (`handleGetHealthCheck`).
    `worker.go`/`subscribers.go` when upstream has them.
 2. `module.go` exports `Module(deps *registry.Deps) registry.Module` plus
    `ModuleID`, queue-name and event-name constants — copied **verbatim** from
-   upstream (snake_case ids, dotted event names).
+   upstream (snake_case ids, dotted event names). Declare **all four** spec-10
+   surfaces on the returned `registry.Module` — `Features`,
+   `NotificationTypes`, `CustomFieldSets`, `CustomEntities`, `DeclaredEvents` —
+   using empty slices when upstream declares none (never omit). Declaration is
+   mandatory even where the consuming engine (notifications/EAV) is a PORT-TODO.
 3. Register the module with one line in `internal/modules/modules.go`.
 4. Add migrations: next free `NNNN` prefix, `NNNN_<module_id>_<desc>.up.sql`
    + matching `.down.sql`, DDL translated from upstream's MikroORM

@@ -16,6 +16,10 @@ builder.WebHost.UseUrls($"http://0.0.0.0:{config.Port}");
 var registry = ModuleCatalog.CreateRegistry();
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(registry);
+// Declared-surface catalogs built from module declarations (upstream notifications.ts / ce.ts).
+// PORT-TODO: delivery/EAV-storage engines arrive with the notifications/entities module ports.
+builder.Services.AddSingleton<OpenMercato.Core.Modules.INotificationCatalog, OpenMercato.Core.Modules.NotificationCatalog>();
+builder.Services.AddSingleton<OpenMercato.Core.Modules.ICustomFieldRegistry, OpenMercato.Core.Modules.CustomFieldRegistry>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options
         .UseNpgsql(config.NpgsqlConnectionString, npgsql => npgsql.MigrationsAssembly("OpenMercato.Api"))

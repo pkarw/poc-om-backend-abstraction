@@ -19,7 +19,7 @@ public sealed class AuthModule : IModule
 {
     public string Id => "auth";
 
-    /// <summary>The 8 ACL feature ids from the contract (acl.ts).</summary>
+    /// <summary>The 8 ACL feature ids from the contract (acl.ts). Kept for back-compat.</summary>
     public IReadOnlyList<string> AclFeatures { get; } = new[]
     {
         "auth.users.list",
@@ -31,6 +31,64 @@ public sealed class AuthModule : IModule
         "auth.acl.manage",
         "auth.sidebar.manage",
     };
+
+    /// <summary>
+    /// The 8 ACL features with their exact titles (upstream acl.ts, all module 'auth').
+    /// Titles are what GET /api/auth/features exposes.
+    /// </summary>
+    public IReadOnlyList<AclFeatureDefinition> AclFeatureDefinitions { get; } = new[]
+    {
+        new AclFeatureDefinition("auth.users.list", "List users"),
+        new AclFeatureDefinition("auth.users.create", "Create users"),
+        new AclFeatureDefinition("auth.users.edit", "Edit users"),
+        new AclFeatureDefinition("auth.users.delete", "Delete users"),
+        new AclFeatureDefinition("auth.roles.list", "List roles"),
+        new AclFeatureDefinition("auth.roles.manage", "Manage roles"),
+        new AclFeatureDefinition("auth.acl.manage", "Manage ACLs"),
+        new AclFeatureDefinition("auth.sidebar.manage", "Manage sidebar presets"),
+    };
+
+    /// <summary>
+    /// The 6 notification types auth registers (upstream notifications.ts, module 'auth').
+    /// Created best-effort via the notifications module's buildNotificationFromType.
+    /// (auth.account.locked and auth.login.new_device are declared but never created upstream.)
+    /// </summary>
+    public IReadOnlyList<NotificationTypeDefinition> NotificationTypes { get; } = new[]
+    {
+        new NotificationTypeDefinition("auth.password_reset.requested", "info", 24),
+        new NotificationTypeDefinition("auth.password_reset.completed", "success", 72),
+        new NotificationTypeDefinition("auth.account.locked", "warning"),
+        new NotificationTypeDefinition("auth.login.new_device", "info", 168),
+        new NotificationTypeDefinition("auth.role.assigned", "success", 168),
+        new NotificationTypeDefinition("auth.role.revoked", "warning", 168),
+    };
+
+    /// <summary>
+    /// The 12 declared event ids (upstream events.ts, createModuleEvents moduleId 'auth').
+    /// user/role CRUD events are persistent; login/logout/password events are fire-and-forget.
+    /// Several are declared-but-never-emitted upstream (auth.logout, auth.password.*) — declaration
+    /// is the supported surface; emission is a runtime concern.
+    /// </summary>
+    public IReadOnlyList<EventDeclaration> DeclaredEvents { get; } = new[]
+    {
+        new EventDeclaration("auth.user.created", "{ id, organizationId, tenantId }", true),
+        new EventDeclaration("auth.user.updated", "{ id, organizationId, tenantId }", true),
+        new EventDeclaration("auth.user.deleted", "{ id, organizationId, tenantId }", true),
+        new EventDeclaration("auth.role.created", "{ id, tenantId }", true),
+        new EventDeclaration("auth.role.updated", "{ id, tenantId }", true),
+        new EventDeclaration("auth.role.deleted", "{ id, tenantId }", true),
+        new EventDeclaration("auth.login.success", "{ id, email, tenantId, organizationId }"),
+        new EventDeclaration("auth.login.failed", "{ email, reason }"),
+        new EventDeclaration("auth.logout", "{ }"),
+        new EventDeclaration("auth.password.changed", "{ id }"),
+        new EventDeclaration("auth.password.reset.requested", "{ email }"),
+        new EventDeclaration("auth.password.reset.completed", "{ id }"),
+    };
+
+    // CustomFieldSets: auth declares NONE (upstream has no ce.ts / data/fields.ts).
+    // It reads/writes custom-field VALUES on auth:user / auth:role via the shared data
+    // engine, but declares no field SETS — so the default (empty) IModule.CustomFieldSets
+    // is correct and intentionally not overridden here.
 
     public void ConfigureServices(IServiceCollection services)
     {

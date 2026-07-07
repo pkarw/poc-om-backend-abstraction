@@ -35,18 +35,66 @@ Mapping from upstream TS concepts to this package (per module `src/om/modules/<m
 | `data/validators.ts` (Zod) | `validators.py` — pydantic v2 models | Field names in JSON payloads stay camelCase where upstream APIs use camelCase (use pydantic `alias`). |
 | `subscribers/*.ts` (`metadata = { event, persistent? }`) | `subscribers.py` handlers + `SubscriberSpec(event=..., id=...)` | Registered in the module's `Module` object. |
 | `workers/*.ts` (`metadata = { queue, id?, concurrency? }`) | `workers.py` handlers + `WorkerSpec(queue=..., id=..., concurrency=...)` | Queue/job names must match upstream verbatim (shared Redis contract). |
-| `acl.ts` (`features` export) | `acl.py` — `features: list[str]` | Same `<module>.<action>` ids. |
+| `acl.ts` (`features` export) | `acl.py` — `features: list[str]` → `Module(acl_features=...)` | Same `<module>.<action>` ids. |
+| `notifications.ts` (`notificationTypes`) | `notifications.py` — `list[NotificationType]` → `Module(notification_types=...)` | Declared now; delivery engine is a PORT-TODO until `notifications` is ported. |
+| `data/fields.ts` (`fieldSets`) | `fields.py` — `list[CustomFieldSet]` → `Module(custom_field_sets=...)` | EAV storage is a PORT-TODO until `entities` is ported. |
+| `ce.ts` (custom entities) | `ce.py` — `list[CustomEntity]` → `Module(custom_entities=...)` | Entities with `fields` also feed custom-field sets. |
+| `events.ts` (`createModuleEvents`) | `events.py` — `list[DeclaredEvent]` → `Module(declared_events=...)` | Event `name` byte-exact; `persistent`/`client_broadcast` flags. |
 | `di.ts` (Awilix `register(container)`) | Module-level factories + FastAPI `Depends` | No DI container; shared singletons live in `om/shared/*`. |
 | `data/migrations/` (per module) | `migrations/versions/` (global Alembic history) | Prefix the revision message with the module id. |
 | `apps/mercato/src/modules.ts` | `src/om/modules/__init__.py` (`MODULES`) | Explicit registration replaces `yarn generate`. |
+
+### Module declaration surfaces (spec 10 — module contract parity)
+
+The `Module` dataclass (`om/shared/registry.py`) exposes **one consistent
+place per module** for the four upstream declaration surfaces, mirroring the
+.NET `IModule` and Go `registry.Module`. Every module declares **all four** —
+as empty lists when it declares none, never omitted — so the shape is identical
+across modules and the registry aggregators are total. "Declare now, engine
+later": the declaration is mandatory even where the consuming engine
+(notifications, EAV) is still a PORT-TODO.
+
+```python
+from om.shared.registry import (
+    Module, NotificationType, CustomField, CustomFieldSet, CustomEntity, DeclaredEvent,
+)
+
+MODULE = Module(
+    id="widgets",
+    router=router,
+    entities=[Widget],
+    acl_features=["widgets.view", "widgets.manage"],          # acl.ts
+    notification_types=[                                        # notifications.ts
+        NotificationType(type="widgets.assigned", module="widgets",
+                         severity="info", title_key="widgets.assigned.title",
+                         expires_after_hours=72),
+    ],
+    custom_field_sets=[                                         # data/fields.ts
+        CustomFieldSet(entity_id="widgets:widget", source="widgets",
+                       fields=[CustomField(key="priority", kind="integer")]),
+    ],
+    custom_entities=[                                           # ce.ts
+        CustomEntity(id="widgets:tag", label="Tag"),
+    ],
+    declared_events=[                                           # events.ts
+        DeclaredEvent(name="widgets.widget.created", persistent=True),
+    ],
+)
+```
+
+The runtime aggregates each surface across enabled modules, in enabled-module
+order, via `all_acl_features()`, `all_notification_types()`,
+`all_custom_field_sets()`, `all_custom_entities()`, `all_declared_events()`
+(all in `om/shared/registry.py`) — the analogue of upstream's `Module[]` →
+registry fold.
 
 Naming conversions: TS camelCase identifiers → Python snake_case (`findUserById` → `find_user_by_id`); kebab-case route segments stay byte-identical in URL paths (`/api/customer-accounts` keeps the hyphen — only Python symbols convert); module ids stay snake_case exactly as upstream directory names.
 
 ## Module Porting Rules
 
-1. Read the upstream module end-to-end first: `api/`, `data/entities.ts`, `data/validators.ts`, `subscribers/`, `workers/`, `acl.ts`, `di.ts`, `setup.ts`.
-2. Create `src/om/modules/<module_id>/` with `__init__.py`, `api.py`, `entities.py`, `validators.py`, `workers.py`, `subscribers.py`, `acl.py` (omit files with no upstream counterpart; keep `acl.py` whenever routes are guarded upstream — never ship guarded routes without features).
-3. Build the frozen `Module` object in `__init__.py` (see `health_check/__init__.py`) and append it to `MODULES` in `src/om/modules/__init__.py` — a module not listed there is silently inactive.
+1. Read the upstream module end-to-end first: `api/`, `data/entities.ts`, `data/validators.ts`, `subscribers/`, `workers/`, `acl.ts`, `notifications.ts`, `ce.ts`, `data/fields.ts`, `events.ts`, `di.ts`, `setup.ts`.
+2. Create `src/om/modules/<module_id>/` with `__init__.py`, `api.py`, `entities.py`, `validators.py`, `workers.py`, `subscribers.py`, `acl.py`, and (when upstream declares them) `notifications.py`, `fields.py`, `ce.py`, `events.py` (omit files with no upstream counterpart; keep `acl.py` whenever routes are guarded upstream — never ship guarded routes without features).
+3. Build the frozen `Module` object in `__init__.py` (see `health_check/__init__.py`) declaring **all** upstream surfaces via `acl_features`, `notification_types`, `custom_field_sets`, `custom_entities`, `declared_events` (empty lists when none — spec 10), and append it to `MODULES` in `src/om/modules/__init__.py` — a module not listed there is silently inactive. Declaration is mandatory even where the consuming engine (notifications/EAV) is still a PORT-TODO.
 4. Add an Alembic migration: `uv run alembic revision -m "<module_id>: <what>"` (or `--autogenerate` after entities import), then verify the SQL matches the upstream MikroORM migration's effect.
 5. Add tests under `tests/` (httpx `ASGITransport` for routes; direct handler calls for workers/subscribers).
 6. Verify: `make test`, then `make up` and curl the new routes against upstream response fixtures.

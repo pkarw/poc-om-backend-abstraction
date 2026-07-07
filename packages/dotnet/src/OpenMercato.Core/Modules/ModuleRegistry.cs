@@ -24,6 +24,62 @@ public sealed class ModuleRegistry
     public IReadOnlyList<string> AclFeatures =>
         Modules.SelectMany(m => m.AclFeatures).Distinct().ToList();
 
+    /// <summary>
+    /// Richer RBAC feature declarations flattened across modules (upstream acl.ts titles).
+    /// Deduped by id (first module wins), so overlapping bare/rich declarations collapse cleanly.
+    /// </summary>
+    public IReadOnlyList<AclFeatureDefinition> AllAclFeatureDefinitions =>
+        Modules.SelectMany(m => m.AclFeatureDefinitions)
+            .GroupBy(f => f.Id)
+            .Select(g => g.First())
+            .ToList();
+
+    /// <summary>
+    /// Notification types flattened across modules (upstream notifications.ts).
+    /// Throws on a duplicate <see cref="NotificationTypeDefinition.Type"/> across modules,
+    /// mirroring the duplicate module-id guard.
+    /// </summary>
+    public IReadOnlyList<NotificationTypeDefinition> AllNotificationTypes =>
+        FlattenUnique(
+            m => m.NotificationTypes,
+            n => n.Type,
+            "notification type");
+
+    /// <summary>
+    /// Declared events flattened across modules (upstream events.ts).
+    /// Throws on a duplicate <see cref="EventDeclaration.Name"/> across modules.
+    /// </summary>
+    public IReadOnlyList<EventDeclaration> AllDeclaredEvents =>
+        FlattenUnique(
+            m => m.DeclaredEvents,
+            e => e.Name,
+            "event");
+
+    /// <summary>Custom-field sets flattened across modules (upstream ce.ts / data/fields.ts).</summary>
+    public IReadOnlyList<CustomFieldSet> AllCustomFieldSets =>
+        Modules.SelectMany(m => m.CustomFieldSets).ToList();
+
+    private List<T> FlattenUnique<T>(
+        Func<IModule, IEnumerable<T>> select,
+        Func<T, string> keyOf,
+        string label)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<T>();
+        foreach (var module in Modules)
+        {
+            foreach (var item in select(module))
+            {
+                var key = keyOf(item);
+                if (!seen.Add(key))
+                    throw new InvalidOperationException(
+                        $"Duplicate {label} declared: '{key}' (module '{module.Id}').");
+                result.Add(item);
+            }
+        }
+        return result;
+    }
+
     public void ConfigureServices(IServiceCollection services)
     {
         foreach (var module in Modules) module.ConfigureServices(services);

@@ -34,5 +34,11 @@ func Module(deps *registry.Deps) registry.Module {
 			{Event: EventPinged, Handler: onPinged},
 		},
 		Features: []string{"health_check.view"},
+		// Declaration surfaces (spec 10). health_check declares none — empty,
+		// not nil-by-omission, so the contract shape matches every module.
+		NotificationTypes: []registry.NotificationType{},
+		CustomFieldSets:   []registry.CustomFieldSet{},
+		CustomEntities:    []registry.CustomEntity{},
+		DeclaredEvents:    []registry.EventDef{},
 	}
 }

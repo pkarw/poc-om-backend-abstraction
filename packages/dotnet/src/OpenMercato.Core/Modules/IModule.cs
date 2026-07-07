@@ -13,13 +13,19 @@ namespace OpenMercato.Core.Modules;
 ///   - ConfigureServices-> di.ts (Awilix) + registers IJobHandler (workers/*.ts)
 ///                         and IEventSubscriber (subscribers/*.ts) implementations
 ///   - AclFeatures      -> acl.ts
+///
+/// The declaration members below mirror the rest of upstream's per-module
+/// surface (notifications.ts, events.ts, ce.ts / data/fields.ts, the richer
+/// acl.ts titles). They are OPTIONAL: C# default interface implementations mean
+/// existing modules compile unchanged and opt in only where they have something
+/// to declare.
 /// </summary>
 public interface IModule
 {
     /// <summary>Module id, snake_case, identical to upstream (e.g. "health_check").</summary>
     string Id { get; }
 
-    /// <summary>Feature flags declared by the module (upstream acl.ts).</summary>
+    /// <summary>Feature flags declared by the module (upstream acl.ts). Kept for back-compat.</summary>
     IReadOnlyList<string> AclFeatures { get; }
 
     /// <summary>Register module services, job handlers and event subscribers (upstream di.ts).</summary>
@@ -30,4 +36,26 @@ public interface IModule
 
     /// <summary>Map HTTP routes under /api/&lt;module_id&gt;/... (upstream api/&lt;method&gt;/&lt;path&gt;.ts).</summary>
     void MapRoutes(IEndpointRouteBuilder routes);
+
+    // --- Optional declaration surface (upstream parity) -------------------------------
+
+    /// <summary>
+    /// Richer RBAC feature declarations with titles (upstream acl.ts).
+    /// Defaults to deriving <c>{ id, title = id }</c> from <see cref="AclFeatures"/> so
+    /// modules that only declare bare ids still surface here.
+    /// </summary>
+    IReadOnlyList<AclFeatureDefinition> AclFeatureDefinitions =>
+        AclFeatures.Select(f => new AclFeatureDefinition(f, f)).ToList();
+
+    /// <summary>Notification types the module declares (upstream notifications.ts). Empty by default.</summary>
+    IReadOnlyList<NotificationTypeDefinition> NotificationTypes =>
+        Array.Empty<NotificationTypeDefinition>();
+
+    /// <summary>Custom-field sets the module attaches to entities (upstream ce.ts / data/fields.ts). Empty by default.</summary>
+    IReadOnlyList<CustomFieldSet> CustomFieldSets =>
+        Array.Empty<CustomFieldSet>();
+
+    /// <summary>Typed events the module declares (upstream events.ts). Empty by default.</summary>
+    IReadOnlyList<EventDeclaration> DeclaredEvents =>
+        Array.Empty<EventDeclaration>();
 }

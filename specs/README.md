@@ -14,5 +14,6 @@ Requirement specs for porting Open Mercato backend modules, derived from the pin
 | 07 | [Shared Services](07-shared-services.md) | `SHAREDSERVICES` | Shared helpers plus translations, notifications, attachments, audit logs, dictionaries, configs, feature toggles, progress, search |
 | 08 | [Parity Testing](08-parity-testing.md) | `PARITY` | How 1:1 is proven: golden request/response tests, schema/queue/event parity, authz matrix, report format |
 | 09 | [Technology Package Standard](09-technology-package-standard.md) | `TECHPKG` | The canonical shape of every `packages/<tech>/`: layout, Makefile, compose, AGENTS.md/README outlines, queue honesty rule |
+| 10 | [Module Contract Parity](10-module-contract-parity.md) | `MODCONTRACT` | The full per-module declaration surface every tech supports identically: RBAC feature declarations, notification types, custom-field sets / custom entities, declared typed events — module abstraction + registry aggregation, declare-now when engines are deferred |
 
 Specs 01–07 share the skeleton **Scope → Requirements → Contracts → Concept mapping → Allowed deviations → Verification**. Specs are normative: if reality forces a deviation, change the spec or record an ADR in `packages/<tech>/docs/decisions/` — never silently diverge (see [../AGENTS.md](../AGENTS.md)).

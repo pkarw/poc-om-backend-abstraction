@@ -29,6 +29,7 @@ scripts/sync-upstream.sh  Refresh the upstream clone (.upstream-cache/, gitignor
 6. **PostgreSQL + Redis + BullMQ-compatible queues everywhere.** With real migration tooling per tech. Never claim BullMQ wire compatibility that isn't implemented — the honest status lives in each tech's queue ADR.
 7. **Track everything in MODULES.md.** Any analyze/port/verify action updates the matrix (⬜ → 🔍 → 🚧 → ✅ → 🧪).
 8. **Env var names are shared.** `DATABASE_URL`, `REDIS_URL`, `QUEUE_STRATEGY`, `QUEUE_REDIS_URL`, `JWT_SECRET` — same names in every package, matching upstream.
+9. **Module contract parity.** Every module declares the *same four pieces the same way in every technology* — **RBAC feature declarations, notification types, custom-field sets / custom entities, and declared typed events** (mirroring upstream `acl.ts` / `notifications.ts` / `ce.ts`+`data/fields.ts` / `events.ts`). Each tech's module abstraction and registry aggregation MUST support them, and every ported module MUST declare its full surface — **declare-now even when the delivery/storage engine is deferred** (only the acting engine may be stubbed, never the declaration). The canonical shape is [`specs/10-module-contract-parity.md`](specs/10-module-contract-parity.md).
 
 ## How to do the common tasks
 
