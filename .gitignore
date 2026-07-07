@@ -1,0 +1,34 @@
+# Upstream clone cache (refreshed by scripts/sync-upstream.sh)
+.upstream-cache/
+
+# Environment
+.env
+.env.local
+*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+uv.lock
+
+# .NET
+bin/
+obj/
+*.user
+
+# Go
+/packages/golang/bin/
+
+# Node (tooling only)
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Parity reports are generated per-run
+.ai/parity/*.tmp.md

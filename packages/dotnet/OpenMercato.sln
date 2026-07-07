@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Core", "src\OpenMercato.Core\OpenMercato.Core.csproj", "{03FE7567-4000-450C-A070-6A294C3ACE67}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Modules.HealthCheck", "src\OpenMercato.Modules.HealthCheck\OpenMercato.Modules.HealthCheck.csproj", "{6915D564-177D-4E3C-8020-FB95C82997A0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Api", "src\OpenMercato.Api\OpenMercato.Api.csproj", "{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Worker", "src\OpenMercato.Worker\OpenMercato.Worker.csproj", "{347B79A4-7818-4EF1-A01A-7D854BDC43A0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenMercato.Tests", "tests\OpenMercato.Tests\OpenMercato.Tests.csproj", "{5543C1AA-9E6F-4036-8712-008A0A092AA5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{03FE7567-4000-450C-A070-6A294C3ACE67}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03FE7567-4000-450C-A070-6A294C3ACE67}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03FE7567-4000-450C-A070-6A294C3ACE67}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03FE7567-4000-450C-A070-6A294C3ACE67}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6915D564-177D-4E3C-8020-FB95C82997A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6915D564-177D-4E3C-8020-FB95C82997A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6915D564-177D-4E3C-8020-FB95C82997A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6915D564-177D-4E3C-8020-FB95C82997A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4C0CD8B-D065-4609-85E6-05FD553EB9A3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{347B79A4-7818-4EF1-A01A-7D854BDC43A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{347B79A4-7818-4EF1-A01A-7D854BDC43A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{347B79A4-7818-4EF1-A01A-7D854BDC43A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{347B79A4-7818-4EF1-A01A-7D854BDC43A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5543C1AA-9E6F-4036-8712-008A0A092AA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5543C1AA-9E6F-4036-8712-008A0A092AA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5543C1AA-9E6F-4036-8712-008A0A092AA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5543C1AA-9E6F-4036-8712-008A0A092AA5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D2E78CC6-DB7D-4DCC-9FD7-35EFB248AACC}
+	EndGlobalSection
+EndGlobal

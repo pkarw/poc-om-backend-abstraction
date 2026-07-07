@@ -1,0 +1,67 @@
+name: om-golang
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: mercato
+      POSTGRES_PASSWORD: mercato
+      POSTGRES_DB: mercato
+    ports:
+      - "5452:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mercato -d mercato"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6399:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    # Entrypoint applies migrations, then serves.
+    command: ["sh", "-c", "migrate && exec api"]
+    environment:
+      DATABASE_URL: postgres://mercato:mercato@postgres:5432/mercato?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-change-me
+      PORT: "8090"
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: .
+    command: ["worker"]
+    environment:
+      DATABASE_URL: postgres://mercato:mercato@postgres:5432/mercato?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-change-me
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy # migrations applied by api entrypoint

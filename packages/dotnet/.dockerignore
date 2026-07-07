@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+.env
+.git
+docs/
+README.md
+AGENTS.md
+Makefile
+docker-compose.yml
