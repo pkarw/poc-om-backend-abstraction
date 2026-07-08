@@ -2,6 +2,7 @@ using OpenMercato.Core.Commands;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth;
 using OpenMercato.Modules.Currencies;
+using OpenMercato.Modules.Customers;
 using OpenMercato.Modules.Dashboards;
 using OpenMercato.Modules.Dictionaries;
 using OpenMercato.Modules.Directory;
@@ -34,5 +35,7 @@ public static class ModuleCatalog
         new CurrenciesModule(),
         // dictionaries: org-scoped enumerations (dictionaries + dictionary_entries); writes via command bus.
         new DictionariesModule(),
+        // customers: CRM domain — 25 tables (people/companies/deals/interactions/...); routes added per phase.
+        new CustomersModule(),
     });
 }

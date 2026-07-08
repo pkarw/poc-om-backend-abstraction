@@ -44,7 +44,8 @@ public static class CrudRoute
         // write the returned IResult (a bare HttpContext->Task lambda is inferred as a RequestDelegate,
         // which discards the result — ASP0016).
         routes.MapGet(basePath, (Func<HttpContext, Task<IResult>>)(http => ListAsync(http, config)));
-        routes.MapGet(basePath + "/{id}", (Func<HttpContext, string, Task<IResult>>)((http, id) => GetByPathAsync(http, id, config)));
+        if (config.MapItemGet)
+            routes.MapGet(basePath + "/{id}", (Func<HttpContext, string, Task<IResult>>)((http, id) => GetByPathAsync(http, id, config)));
         routes.MapPost(basePath, (Func<HttpContext, Task<IResult>>)(http => CreateAsync(http, config)));
         routes.MapPut(basePath, (Func<HttpContext, Task<IResult>>)(http => MutateAsync(http, config, isDelete: false, config.UpdateDispatch, config.UpdateFeatures, config.ValidateUpdate, config.UpdateResponse)));
         routes.MapDelete(basePath, (Func<HttpContext, Task<IResult>>)(http => MutateAsync(http, config, isDelete: true, config.DeleteDispatch, config.DeleteFeatures, null, config.DeleteResponse)));

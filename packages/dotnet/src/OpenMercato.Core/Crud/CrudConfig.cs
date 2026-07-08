@@ -57,6 +57,14 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     public string DefaultSortField { get; init; } = "id";
 
     /// <summary>
+    /// When true (default) the factory maps the built-in single-item route <c>GET /api/{base}/{id}</c>.
+    /// A module sets this to <c>false</c> when it ships a hand-written detail endpoint at the same path
+    /// (e.g. customers people/companies override the single-get with an enriched detail view) — avoids a
+    /// duplicate-route ambiguity. The <c>?id=</c> single-item shortcut on the list route is unaffected.
+    /// </summary>
+    public bool MapItemGet { get; init; } = true;
+
+    /// <summary>
     /// When true, list reads resolve matching record ids (filter/sort by base fields AND
     /// <c>cf:&lt;key&gt;</c> custom fields) via the query index (<see cref="ICrudIndexQuery"/>) before
     /// loading the base rows by id — the upstream <c>queryEngine</c> list path (spec 03 R49). When the
