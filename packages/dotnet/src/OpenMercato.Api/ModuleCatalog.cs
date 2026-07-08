@@ -1,3 +1,4 @@
+using OpenMercato.Core.Commands;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth;
 using OpenMercato.Modules.Dashboards;
@@ -19,5 +20,7 @@ public static class ModuleCatalog
         new AuthModule(),
         new DirectoryModule(),
         new DashboardsModule(),
+        // audit_logs: maps action_logs + registers the CommandBus/ActionLogService (command-write infra).
+        new AuditLogsModule(),
     });
 }

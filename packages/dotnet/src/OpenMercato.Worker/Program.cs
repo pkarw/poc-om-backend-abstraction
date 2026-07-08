@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using OpenMercato.Core.Commands;
 using OpenMercato.Core.Configuration;
+using OpenMercato.Core.Crud;
 using OpenMercato.Core.Events;
 using OpenMercato.Core.Modules;
 using OpenMercato.Core.Queue;
@@ -20,6 +22,7 @@ var registry = new ModuleRegistry(new IModule[]
     new AuthModule(),
     new DirectoryModule(),
     new DashboardsModule(),
+    new AuditLogsModule(),
 });
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -34,6 +37,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.QueueRedisUrl)));
 builder.Services.AddSingleton<IJobQueue, RedisJobQueue>();
 builder.Services.AddSingleton<IEventBus, LocalEventBus>();
+// CRUD factory extension points (no-op custom-fields/indexer + fail-closed auth bridge). The worker
+// has no HTTP surface, but registering keeps the DI graph resolvable for any command-path code paths.
+builder.Services.AddOpenMercatoCrud();
 registry.ConfigureServices(builder.Services);
 builder.Services.AddHostedService<QueueWorkerService>();
 

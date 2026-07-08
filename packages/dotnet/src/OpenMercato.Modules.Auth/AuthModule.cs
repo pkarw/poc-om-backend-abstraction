@@ -117,6 +117,12 @@ public sealed class AuthModule : IModule
         services.AddScoped<IRbacService, OpenMercato.Modules.Auth.Services.RbacService>();
         services.AddScoped<OpenMercato.Modules.Auth.Services.AuthService>();
         services.AddScoped<OpenMercato.Modules.Auth.Services.SidebarPreferencesService>();
+
+        // The CRUD factory's auth bridge (OpenMercato.Core.Crud.ICrudRequestContext): resolves the
+        // request's staff principal into a CommandContext + runs the RBAC feature check. Registered
+        // after Core's fail-closed default so this real implementation wins on resolve.
+        services.AddHttpContextAccessor();
+        services.AddScoped<OpenMercato.Core.Crud.ICrudRequestContext, OpenMercato.Modules.Auth.Security.AuthCrudRequestContext>();
     }
 
     public void ConfigureModel(ModelBuilder modelBuilder)

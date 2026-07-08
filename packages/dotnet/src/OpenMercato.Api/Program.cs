@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OpenMercato.Api;
 using OpenMercato.Core.Configuration;
+using OpenMercato.Core.Crud;
 using OpenMercato.Core.Data;
 using OpenMercato.Core.Events;
 using OpenMercato.Core.Queue;
@@ -33,6 +34,9 @@ builder.Services.AddSingleton<IJobQueue>(sp =>
         ? sp.GetRequiredService<IConnectionMultiplexer>()
         : ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.QueueRedisUrl))));
 builder.Services.AddSingleton<IEventBus, LocalEventBus>();
+// CRUD factory extension points (no-op custom-fields/indexer + fail-closed auth bridge). Registered
+// before modules so the Auth module can override ICrudRequestContext with its real implementation.
+builder.Services.AddOpenMercatoCrud();
 registry.ConfigureServices(builder.Services);
 
 var app = builder.Build();

@@ -39,6 +39,10 @@ Mapping from upstream TS concepts to this package:
 | Open Mercato (TypeScript)                        | This package (.NET)                                                                 |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | `modules/<m>/api/<method>/<path>.ts`             | `MapGet`/`MapPost("/api/<m>/<path>", ...)` in `Modules.<M>/Api/*Endpoints.cs`, wired via `IModule.MapRoutes` |
+| `makeCrudRoute` (`packages/shared/src/lib/crud/factory.ts`) | `OpenMercato.Core.Crud` — `CrudRoute.Map<TEntity>(routes, CrudConfig<TEntity>)`. Use this for any endpoint upstream builds with `makeCrudRoute`; DO NOT hand-write the list/get/create/update/delete contract. Register once with `services.AddOpenMercatoCrud()` |
+| `commands/*.ts` + `CommandBus` + `registerCommand` (`packages/shared/src/lib/commands/*`) | `OpenMercato.Core.Commands` — handlers implement `ICommand<TInput,TResult>` (id `"<module>.<domain>.<action>"`) + optional `IUndoableCommand` (`UndoAsync`/`RedoAsync`) + `ICommandLogMetadataBuilder<,>`; register `services.AddScoped<ICommand, …>()`; dispatch via `CommandBus.ExecuteWithLog` / `Undo` / `Redo`. Writes an `action_logs` row (`ActionLog`, redo envelope, undo token) |
+| `splitCustomFieldPayload` / `decorateRecordWithCustomFields` (`crud/custom-fields.ts`) | `OpenMercato.Core.Crud.ICrudCustomFields` extension point (factory calls it on read to decorate `customValues`/`customFields`, on write to persist `cf_*`); default `NoopCrudCustomFields` until the entities module lands |
+| `query_index.upsert_one` / `delete_one` maintenance | `OpenMercato.Core.Crud.ICrudIndexer` extension point (factory awaits it after every command-backed write so `entity_indexes` stays in sync — read-your-writes); default `NoopCrudIndexer` until the query_index module lands |
 | `modules/<m>/data/entities.ts` (MikroORM)        | POCO classes in `Modules.<M>/Data/` + mapping in `IModule.ConfigureModel(ModelBuilder)` |
 | `modules/<m>/data/validators.ts` (Zod)           | `AbstractValidator<T>` classes in `Modules.<M>/Validators/` (FluentValidation)      |
 | `modules/<m>/subscribers/*.ts`                   | `IEventSubscriber` implementations in `Modules.<M>/Subscribers/`, registered in `ConfigureServices` |
@@ -81,6 +85,35 @@ Naming conversions:
 6. Never call Redis directly from a module — go through `IJobQueue`/`IEventBus`.
 7. Add xunit tests under `tests/OpenMercato.Tests/` (at minimum: validators and
    any pure logic).
+8. **CRUD routes use the factory, not hand-written handlers.** Where the upstream
+   module builds an endpoint with `makeCrudRoute`, wire it with
+   `OpenMercato.Core.Crud` — call `CrudRoute.Map<TEntity>(routes, config)` from
+   `IModule.MapRoutes` with a `CrudConfig<TEntity>` describing base fields,
+   filters, sort map, custom-field wiring and the mutation commands. The factory
+   owns the list envelope `{items,total,page,pageSize,totalPages}`, pagination
+   clamping, sort aliasing, `ids` intersection, error envelopes and pipeline
+   ordering (specs 02 R19–R49). Do NOT re-implement that contract per route.
+9. **Write ops are commands on the command bus.** Every POST/PUT/DELETE — factory
+   or hand-written — dispatches a named command via `OpenMercato.Core.Commands`.
+   Implement `ICommand<TInput,TResult>` (id `"<module>.<domain>.<action>"`, e.g.
+   `customers.people.create`), add `IUndoableCommand` (`UndoAsync`/`RedoAsync`,
+   redo reusing the original id) and `ICommandLogMetadataBuilder<,>` wherever
+   upstream's command does, and register `services.AddScoped<ICommand, …>()` in
+   `ConfigureServices` (= upstream `registerCommand`). Dispatch through
+   `CommandBus.ExecuteWithLog`/`Undo`/`Redo`; never write a business table outside
+   a command handler. The bus persists the `action_logs` row (redo envelope +
+   undo token) that backs the `x-om-operation` header and undo/redo (specs 02 R41,
+   03 R57/R59).
+10. **Entities with custom fields: declare the CE field set AND index it.** Declare
+    the field set / custom entity via the module-contract mechanism (upstream
+    `ce.ts` + `data/fields.ts`), then index the entity's base columns AND its
+    `cf:<key>` values into `entity_indexes` on every write through the factory's
+    `ICrudIndexer` extension point, so list endpoints filter/sort on custom fields
+    (`cf_<key>`, `cf_<key>In`, `cf_<key>` sort — specs 02 R21/R45, 03 R49a). Custom
+    field read/write decoration goes through `ICrudCustomFields`. Until the
+    entities / query_index modules land, the `NoopCrudCustomFields`/`NoopCrudIndexer`
+    defaults are the `// PARITY-TODO` seam — leave an ADR, don't skip the
+    declaration.
 
 ## API Compatibility Rules
 
