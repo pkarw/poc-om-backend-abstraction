@@ -5,3 +5,8 @@
 auth
 directory
 dashboards
+entities
+query_index
+dictionaries
+currencies
+customers

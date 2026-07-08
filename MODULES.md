@@ -126,3 +126,5 @@ Order follows the dependency graph in [`upstream/analysis/07-shared-services.md`
 5. **Tier 4 — adapters & optional.** Concrete integrations that plug into Tier 2/3 contracts: `gateway-stripe` (payment_gateways), `channel-gmail`/`channel-imap` (communication_channels), `sync-akeneo` (catalog + data_sync), `ai-assistant` (search + api_keys + …), `enterprise`, `content`. Port on demand.
 
 Within a tier, prefer modules with **0 unported dependencies** first; the "Depends on" column in analysis 07 is the authoritative edge list. Surface counts there (api/ent/wrk/sub) are the effort estimate (±10%).
+
+> **customers (.NET):** all 4 phases ported (25 tables, ~90 routes, 51 events, 5 custom-field sets) via the command bus + CRUD factory + entities(custom fields) + query_index(cf indexation); 223 tests; live-verified standalone (list/detail/create/deals/cf-filter). Testbench integration: API wired + authed + writes land in the shared OM DB; reading OM-written PII needs the tenant-DEK encryption port (see testbench/INTEGRATION-customers.md).

@@ -59,6 +59,8 @@ services:
       QUEUE_REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
       LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY:-testbench-shared-encryption-key-change-me}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_FALLBACK_KEY:-testbench-shared-encryption-key-change-me}
       OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
       OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
     volumes:
@@ -81,6 +83,8 @@ services:
       QUEUE_REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
       LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY:-testbench-shared-encryption-key-change-me}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_FALLBACK_KEY:-testbench-shared-encryption-key-change-me}
       OM_SKIP_MIGRATIONS: "1"
       PORT: "8080"
     depends_on:
@@ -100,6 +104,8 @@ services:
       QUEUE_REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
       LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY:-testbench-shared-encryption-key-change-me}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_FALLBACK_KEY:-testbench-shared-encryption-key-change-me}
       OM_SKIP_MIGRATIONS: "1"
     depends_on:
       postgres:
