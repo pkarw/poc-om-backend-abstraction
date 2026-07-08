@@ -7,7 +7,9 @@ using OpenMercato.Core.Events;
 using OpenMercato.Core.Modules;
 using OpenMercato.Core.Queue;
 using OpenMercato.Modules.Auth;
+using OpenMercato.Modules.Currencies;
 using OpenMercato.Modules.Dashboards;
+using OpenMercato.Modules.Dictionaries;
 using OpenMercato.Modules.Directory;
 using OpenMercato.Modules.Entities;
 using OpenMercato.Modules.HealthCheck;
@@ -27,6 +29,8 @@ var registry = new ModuleRegistry(new IModule[]
     new AuditLogsModule(),
     new EntitiesModule(),
     new QueryIndexModule(),
+    new CurrenciesModule(),
+    new DictionariesModule(),
 });
 
 var builder = Host.CreateApplicationBuilder(args);

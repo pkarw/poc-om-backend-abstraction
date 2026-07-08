@@ -1,7 +1,9 @@
 using OpenMercato.Core.Commands;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth;
+using OpenMercato.Modules.Currencies;
 using OpenMercato.Modules.Dashboards;
+using OpenMercato.Modules.Dictionaries;
 using OpenMercato.Modules.Directory;
 using OpenMercato.Modules.Entities;
 using OpenMercato.Modules.HealthCheck;
@@ -28,5 +30,9 @@ public static class ModuleCatalog
         new EntitiesModule(),
         // query_index: hybrid read model — entity_indexes projection + the real ICrudIndexer/ICrudIndexQuery.
         new QueryIndexModule(),
+        // currencies: currency reference data + exchange rates + ConvertToBase conversion (CRUD via factory).
+        new CurrenciesModule(),
+        // dictionaries: org-scoped enumerations (dictionaries + dictionary_entries); writes via command bus.
+        new DictionariesModule(),
     });
 }

@@ -30,6 +30,8 @@
     <ProjectReference Include="../../src/OpenMercato.Modules.Dashboards/OpenMercato.Modules.Dashboards.csproj" />
     <ProjectReference Include="../../src/OpenMercato.Modules.Entities/OpenMercato.Modules.Entities.csproj" />
     <ProjectReference Include="../../src/OpenMercato.Modules.QueryIndex/OpenMercato.Modules.QueryIndex.csproj" />
+    <ProjectReference Include="..\..\src\OpenMercato.Modules.Currencies\OpenMercato.Modules.Currencies.csproj" />
+    <ProjectReference Include="../../src/OpenMercato.Modules.Dictionaries/OpenMercato.Modules.Dictionaries.csproj" />
   </ItemGroup>
 
 </Project>

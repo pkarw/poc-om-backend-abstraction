@@ -22,6 +22,8 @@
     <ProjectReference Include="../OpenMercato.Modules.Dashboards/OpenMercato.Modules.Dashboards.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.Entities/OpenMercato.Modules.Entities.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.QueryIndex/OpenMercato.Modules.QueryIndex.csproj" />
+    <ProjectReference Include="..\OpenMercato.Modules.Currencies\OpenMercato.Modules.Currencies.csproj" />
+    <ProjectReference Include="../OpenMercato.Modules.Dictionaries/OpenMercato.Modules.Dictionaries.csproj" />
   </ItemGroup>
 
 </Project>

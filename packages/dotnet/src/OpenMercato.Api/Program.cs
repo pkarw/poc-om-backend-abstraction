@@ -56,6 +56,9 @@ else
     // Env-gated, idempotent boot seeding of the full Acme dataset (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
     // Identical to CLI `init`/`seed` — see OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.
     await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
+
+    // currencies setup.ts seedDefaults parity: ensure the default currency list for every org scope.
+    await OpenMercato.Modules.Currencies.Seeding.CurrenciesSeeder.RunBootAsync(app.Services, app.Logger);
 }
 
 // Liveness: must not touch Postgres or Redis.

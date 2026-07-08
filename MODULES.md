@@ -53,13 +53,13 @@ These upstream packages are not ported as standalone modules; their behavior is 
 | Module | Purpose (short) | Tier | Python | .NET | Go |
 |---|---|---|---|---|---|
 | translations | Entity translation storage + locale overlay | 2 | ⬜ | ⬜ | ⬜ |
-| dictionaries | Org-scoped enumerations with appearance presets | 2 | ⬜ | ⬜ | ⬜ |
+| [dictionaries](upstream/analysis/modules/dictionaries.md) | Org-scoped enumerations with appearance presets | 2 | ⬜ | ✅ | ⬜ |
 | notifications | In-app notifications with extensible types and actions | 2 | ⬜ | ⬜ | ⬜ |
 | attachments | File attachments and media management (StorageDriver abstraction) | 2 | ⬜ | ⬜ | ⬜ |
 | storage-s3 (pkg) | S3-compatible StorageDriver for attachments + admin APIs | 2 | ⬜ | ⬜ | ⬜ |
 | audit_logs | User action/access tracking with undo/redo | 2 | ⬜ | ⬜ | ⬜ |
 | progress | Server-side progress tracking for long-running ops | 2 | ⬜ | ⬜ | ⬜ |
-| currencies | Currencies and exchange-rate management | 2 | ⬜ | ⬜ | ⬜ |
+| [currencies](upstream/analysis/modules/currencies.md) | Currencies and exchange-rate management | 2 | ⬜ | ✅ | ⬜ |
 | perspectives | Persistence for DataTable saved views | 2 | ⬜ | ⬜ | ⬜ |
 | integrations | Integration framework: external ID mapping, registry | 2 | ⬜ | ⬜ | ⬜ |
 | business_rules | Rules engine: conditions + actions on entity events | 2 | ⬜ | ⬜ | ⬜ |
