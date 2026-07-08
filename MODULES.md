@@ -17,6 +17,8 @@ Update flow: statuses only move forward via the skills (`om-analyze-module` → 
 
 > 🧪 **.NET milestone.** `auth`, `directory` and `dashboards` are ported and working in `packages/dotnet` (105 tests pass). Together with the `packages/dotnet` CLI and the [`testbench/`](testbench/README.md), they power an end-to-end demo: log into a **real Open Mercato** UI and have login, the org switcher, and the dashboard shell served by the .NET port against a shared Postgres. See [`GETTING_STARTED.md`](GETTING_STARTED.md) and [`specs/11-testbench.md`](specs/11-testbench.md).
 
+> 🚧 **customers (.NET), Phase 1–2.** Records (people/companies/addresses/tags/labels/roles/links) and **dictionaries & settings** are ported: `api/dictionaries/[kind]` (+`[id]`, `currency`, `kind-settings`) and `api/settings/{address-format,dictionary-sort-modes,stuck-threshold}`, all as command-bus routes with the exact upstream envelopes/status codes (201-by-mode create, `{success:true}` delete, `role_type_in_use` 409, table-missing tolerant kind-settings). Command handlers are **reflection-registered** (every `ICommand` in the Customers assembly auto-binds, so later phases add command classes as new files only). 196 tests pass. Deferred (ADR/PARITY-TODO): dictionary list cache + mutation-guard hooks + kind-setting query-index projection; Phases 3–4 (deals/interactions/comments, dashboard widgets).
+
 ## Matrix
 
 Tiers: **0** = runtime foundation (scaffold-level), **1** = platform base, **2** = cross-cutting services, **3** = domain modules, **4** = adapters & optional packages.

@@ -175,6 +175,10 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             return new { id = l.CompanyEntityId.ToString(), displayName = c?.DisplayName, isPrimary = l.IsPrimary };
         }).ToList();
 
+        // Best-effort enrichment of the timeline collections, include-token gated (see CustomerDetailEnrichment).
+        var tokens = CustomerDetailEnrichment.ParseIncludeTokens(http);
+        var enriched = await CustomerDetailEnrichment.LoadAsync(db, entity, isCompany: false, tokens);
+
         return CustomersHttp.Json(new
         {
             interactionMode = "canonical",
@@ -183,11 +187,11 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             customFields = item.TryGetValue("customValues", out var cv) ? cv : null,
             tags,
             addresses = addresses.Select(ProjectAddress).ToList(),
-            comments = Array.Empty<object>(),
-            activities = Array.Empty<object>(),
-            interactions = Array.Empty<object>(),
-            deals = Array.Empty<object>(),
-            todos = Array.Empty<object>(),
+            comments = enriched.Comments,
+            activities = enriched.Activities,
+            interactions = enriched.Interactions,
+            deals = enriched.Deals,
+            todos = enriched.Todos,
             isPrimary = links.Any(l => l.IsPrimary),
             companies = companySummaries,
             company = companySummaries.FirstOrDefault(),
@@ -195,12 +199,14 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             counts = new
             {
                 tags = tags.Count,
-                comments = 0, activities = 0, interactions = 0, todos = 0,
-                addresses = addresses.Count, deals = 0, companies = companySummaries.Count,
+                comments = enriched.CommentsCount, activities = enriched.ActivitiesCount,
+                interactions = enriched.InteractionsCount, todos = enriched.TodosCount,
+                addresses = addresses.Count, deals = enriched.DealsCount, companies = companySummaries.Count,
             },
             viewer = new { userId = ctx!.UserId?.ToString(), name = (string?)null, email = (string?)null },
         }, 200);
-        // PARITY-TODO: comments/activities/interactions/deals/todos enrichment + include-token gating lands in Phase 3.
+        // PARITY-TODO: plannedActivitiesPreview + author name/email hydration + private-email visibility
+        // filtering + canonical/legacy interaction merge remain deferred (see ADR). Shapes preserved.
     }
 
     // ---- person↔company links -----------------------------------------------------------------

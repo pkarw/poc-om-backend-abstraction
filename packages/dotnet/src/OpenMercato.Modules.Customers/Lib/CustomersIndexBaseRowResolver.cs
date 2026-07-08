@@ -28,6 +28,12 @@ public sealed class CustomersIndexBaseRowResolver : IIndexBaseRowResolver
     public async Task<IReadOnlyDictionary<string, object?>?> LoadAsync(
         string entityType, string recordId, Guid? organizationId, Guid? tenantId, CancellationToken ct = default)
     {
+        // Deal read model (customers:customer_deal) is a first-class physical table (customer_deals),
+        // not the polymorphic entity/satellite pattern — project it directly so the query index carries
+        // the deal base columns for search/filter/sort (title/status/value_*/pipeline_*), Phase 3.
+        if (entityType == "customers:customer_deal")
+            return await LoadDealAsync(recordId, ct);
+
         var kind = entityType switch
         {
             "customers:customer_person_profile" => "person",
@@ -82,5 +88,37 @@ public sealed class CustomersIndexBaseRowResolver : IIndexBaseRowResolver
         }
 
         return doc;
+    }
+
+    /// <summary>Project a <c>customer_deals</c> row into the index base doc (snake-case keys matching the
+    /// deal list <c>fields</c>), so <c>customers:customer_deal</c> lists filter/sort by base + cf fields.</summary>
+    private async Task<IReadOnlyDictionary<string, object?>?> LoadDealAsync(string recordId, CancellationToken ct)
+    {
+        if (!Guid.TryParse(recordId, out var id)) return null;
+        var d = await _db.Set<CustomerDeal>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
+        if (d is null) return null;
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = d.Id.ToString(),
+            ["title"] = d.Title,
+            ["description"] = d.Description,
+            ["status"] = d.Status,
+            ["pipeline_stage"] = d.PipelineStage,
+            ["pipeline_id"] = d.PipelineId?.ToString(),
+            ["pipeline_stage_id"] = d.PipelineStageId?.ToString(),
+            ["value_amount"] = d.ValueAmount,
+            ["value_currency"] = d.ValueCurrency,
+            ["probability"] = d.Probability,
+            ["expected_close_at"] = d.ExpectedCloseAt?.ToUniversalTime().ToString("o"),
+            ["owner_user_id"] = d.OwnerUserId?.ToString(),
+            ["source"] = d.Source,
+            ["closure_outcome"] = d.ClosureOutcome,
+            ["loss_reason_id"] = d.LossReasonId?.ToString(),
+            ["loss_notes"] = d.LossNotes,
+            ["organization_id"] = d.OrganizationId.ToString(),
+            ["tenant_id"] = d.TenantId.ToString(),
+            ["created_at"] = d.CreatedAt.ToUniversalTime().ToString("o"),
+            ["updated_at"] = d.UpdatedAt.ToUniversalTime().ToString("o"),
+        };
     }
 }

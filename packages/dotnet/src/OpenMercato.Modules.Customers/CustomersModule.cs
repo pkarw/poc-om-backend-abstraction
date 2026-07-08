@@ -234,32 +234,17 @@ public sealed class CustomersModule : IModule
     // -------------------------------------------------------------------------------------------
     public void ConfigureServices(IServiceCollection services)
     {
-        // Phase 1 — records write commands (base + satellite, cf persistence, undoable). People/companies
-        // create/update/delete + addresses + tags(+assign/unassign) + labels(+assign/unassign) +
-        // entity-roles + person↔company links.
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreatePersonCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdatePersonCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeletePersonCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreateCompanyCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdateCompanyCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeleteCompanyCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreateAddressCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdateAddressCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeleteAddressCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreateTagCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdateTagCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeleteTagCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.AssignTagCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UnassignTagCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreateLabelCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.AssignLabelCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UnassignLabelCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreateEntityRoleCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdateEntityRoleCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeleteEntityRoleCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.CreatePersonCompanyLinkCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.UpdatePersonCompanyLinkCommand>();
-        services.AddScoped<OpenMercato.Core.Commands.ICommand, Commands.DeletePersonCompanyLinkCommand>();
+        // Command handlers — reflection-discovered. Every non-abstract class in the Customers assembly
+        // that implements OpenMercato.Core.Commands.ICommand is registered as a scoped ICommand, so later
+        // phases add command classes as NEW files without ever editing this module. The CommandBus resolves
+        // each handler by its CommandId. Phase 1 records + Phase 2 dictionaries/settings + all future phases
+        // are picked up automatically.
+        var commandType = typeof(OpenMercato.Core.Commands.ICommand);
+        var commandImpls = typeof(CustomersModule).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && commandType.IsAssignableFrom(t))
+            .OrderBy(t => t.FullName, StringComparer.Ordinal);
+        foreach (var impl in commandImpls)
+            services.AddScoped(commandType, impl);
 
         // Index base-row resolver: teaches the query_index projection how to read the polymorphic
         // people/companies base rows (customer_entities + satellite). Registered here (customers loads

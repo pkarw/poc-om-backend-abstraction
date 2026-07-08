@@ -117,6 +117,20 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
         var codec = http.RequestServices.GetRequiredService<ICrudCustomFields>();
         await codec.MergeIntoDetailAsync(CustomerWriteHelpers.CompanyEntityType, item, ctx!);
 
+        // Best-effort enrichment of the timeline collections, include-token gated (see CustomerDetailEnrichment).
+        var tokens = CustomerDetailEnrichment.ParseIncludeTokens(http);
+        var enriched = await CustomerDetailEnrichment.LoadAsync(db, entity, isCompany: true, tokens);
+
+        // Best-effort deal KPIs from the company's linked deals (LTV/tenure/activity trend still deferred).
+        var companyDealIds = await db.Set<CustomerDealCompanyLink>().AsNoTracking().Where(l => l.CompanyEntityId == companyId).Select(l => l.DealId).ToListAsync();
+        var companyDeals = companyDealIds.Count == 0
+            ? new List<CustomerDeal>()
+            : await db.Set<CustomerDeal>().AsNoTracking().Where(d => companyDealIds.Contains(d.Id) && d.DeletedAt == null).ToListAsync();
+        var activeDeals = companyDeals.Where(d => d.ClosureOutcome == null && d.Status != "won" && d.Status != "lost").ToList();
+        var completedDeals = companyDeals.Where(d => d.ClosureOutcome == "won" || d.Status == "won").ToList();
+        var activeDealsValue = activeDeals.Sum(d => d.ValueAmount ?? 0m);
+        var dealCurrency = companyDeals.FirstOrDefault(d => d.ValueCurrency != null)?.ValueCurrency;
+
         return CustomersHttp.Json(new
         {
             interactionMode = "canonical",
@@ -131,22 +145,28 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
             tags,
             addresses = addresses.Select(PeopleRoutes.ProjectAddress).ToList(),
             people,
-            comments = Array.Empty<object>(),
-            activities = Array.Empty<object>(),
-            interactions = Array.Empty<object>(),
-            deals = Array.Empty<object>(),
-            todos = Array.Empty<object>(),
+            comments = enriched.Comments,
+            activities = enriched.Activities,
+            interactions = enriched.Interactions,
+            deals = enriched.Deals,
+            todos = enriched.Todos,
             temperature = entity.Temperature,
             renewalQuarter = entity.RenewalQuarter,
             kpis = new
             {
-                activeDealsCount = 0, activeDealsValue = 0m, dealCurrency = (string?)null, activityCount = 0,
-                activityTrend = (object?)null, ltvValue = 0m, completedDealsCount = 0, clientTenureYears = 0,
+                activeDealsCount = activeDeals.Count, activeDealsValue, dealCurrency,
+                activityCount = enriched.ActivitiesCount, activityTrend = (object?)null, ltvValue = 0m,
+                completedDealsCount = completedDeals.Count, clientTenureYears = 0,
             },
-            counts = new { tags = tags.Count, comments = 0, activities = 0, interactions = 0, todos = 0, addresses = addresses.Count, deals = 0, people = people.Count },
+            counts = new
+            {
+                tags = tags.Count, comments = enriched.CommentsCount, activities = enriched.ActivitiesCount,
+                interactions = enriched.InteractionsCount, todos = enriched.TodosCount,
+                addresses = addresses.Count, deals = enriched.DealsCount, people = people.Count,
+            },
             viewer = new { userId = ctx!.UserId?.ToString(), name = (string?)null, email = (string?)null },
         }, 200);
-        // PARITY-TODO: kpis (deal value/LTV/tenure/activity trend) + timeline collections land in Phase 3.
+        // PARITY-TODO: kpis LTV/tenure/activity-trend + author hydration + private-email visibility remain deferred (ADR).
     }
 
     private static async Task<IResult> ListPeopleAsync(HttpContext http, string id)

@@ -25,13 +25,49 @@ public static class CustomersSeeder
         "influencer", "end-user", "blocker", "vip", "strategic-account", "reference-customer", "case-study-candidate",
     };
 
-    private static readonly (string Kind, string[] Values)[] DictionarySubset =
+    /// <summary>A seeded dictionary entry: <c>value</c> plus optional label/color/icon
+    /// (upstream <c>ensureDictionaryEntry</c>). When Label is null the value is used as the label.</summary>
+    private readonly record struct DictSeed(string Value, string? Label = null, string? Color = null, string? Icon = null);
+
+    /// <summary>Full customers dictionary defaults — the port of <c>seedCustomerDictionaries</c> (cli.ts)
+    /// plus the <c>customer_role_type</c> set seeded by setup.ts. <c>renewal_quarter</c> is generated
+    /// (current year + 2 future years × Q1–Q4).</summary>
+    private static IReadOnlyList<(string Kind, DictSeed[] Entries)> DictionaryDefaults()
     {
-        ("status", new[] { "active", "inactive", "pending", "archived" }),
-        ("lifecycle_stage", new[] { "lead", "prospect", "customer", "subscriber", "churned", "other" }),
-        ("source", new[] { "linkedin", "email", "web_form", "referral", "event", "cold_outreach", "other" }),
-        ("temperature", new[] { "hot", "high", "medium", "low", "cold" }),
-    };
+        var year = DateTimeOffset.UtcNow.Year;
+        var renewalQuarters = Enumerable.Range(0, 3)
+            .SelectMany(offset => Enumerable.Range(1, 4).Select(q => new DictSeed($"{year + offset}_q{q}")))
+            .ToArray();
+
+        return new (string, DictSeed[])[]
+        {
+            ("status", Seeds("active", "inactive", "pending", "archived")),
+            ("lifecycle_stage", Seeds("lead", "prospect", "customer", "subscriber", "churned", "other")),
+            ("source", Seeds("linkedin", "email", "web_form", "referral", "customer_referral", "partner_referral",
+                "event", "cold_outreach", "facebook", "typeform", "other")),
+            ("address_type", Seeds("office", "work", "billing", "shipping", "home")),
+            ("activity_type", Seeds("call", "email", "meeting", "note", "task")),
+            ("job_title", Seeds("Director of Operations", "VP of Partnerships", "Founder & Principal",
+                "Senior Project Manager", "Chief Revenue Officer", "Director of Retail Partnerships")),
+            ("deal_status", Seeds("open", "closed", "win", "loose", "in_progress")),
+            ("pipeline_stage", Seeds("opportunity", "marketing_qualified_lead", "sales_qualified_lead", "offering",
+                "negotiations", "win", "loose", "stalled")),
+            ("industry", Seeds("Renewable Energy", "Software", "Interior Design", "SaaS", "E-commerce", "Healthcare",
+                "Manufacturing", "Logistics", "Financial Services", "Retail", "Hospitality", "Energy", "Media")),
+            ("temperature", Seeds("hot", "high", "medium", "low", "cold")),
+            ("renewal_quarter", renewalQuarters),
+            ("person_company_role", Seeds("decision_maker", "influencer", "budget_holder", "technical_evaluator",
+                "primary_contact", "end_user")),
+            ("customer_role_type", new[]
+            {
+                new DictSeed("sales_owner", "Sales Owner", "#2563eb", "lucide:briefcase"),
+                new DictSeed("service_owner", "Service Owner", "#16a34a", "lucide:headphones"),
+                new DictSeed("account_manager", "Account Manager", "#f59e0b", "lucide:user-check"),
+            }),
+        };
+    }
+
+    private static DictSeed[] Seeds(params string[] values) => values.Select(v => new DictSeed(v)).ToArray();
 
     private static readonly (string Company, string Industry, string Lifecycle, (string First, string Last)[] People)[] Examples =
     {
@@ -49,18 +85,19 @@ public static class CustomersSeeder
         var now = DateTimeOffset.UtcNow;
         var seeded = 0;
 
-        // 2) Dictionary subset.
-        foreach (var (kind, values) in DictionarySubset)
-            foreach (var value in values)
+        // 2) Dictionary defaults (full set + role types).
+        foreach (var (kind, entries) in DictionaryDefaults())
+            foreach (var seed in entries)
             {
-                var norm = value.Trim().ToLowerInvariant();
+                var norm = seed.Value.Trim().ToLowerInvariant();
                 var exists = await db.Set<CustomerDictionaryEntry>().AnyAsync(e =>
                     e.OrganizationId == organizationId && e.TenantId == tenantId && e.Kind == kind && e.NormalizedValue == norm, ct);
                 if (exists) continue;
                 db.Set<CustomerDictionaryEntry>().Add(new CustomerDictionaryEntry
                 {
                     Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId, Kind = kind,
-                    Value = value, NormalizedValue = norm, Label = value, CreatedAt = now, UpdatedAt = now,
+                    Value = seed.Value, NormalizedValue = norm, Label = seed.Label ?? seed.Value,
+                    Color = seed.Color, Icon = seed.Icon, CreatedAt = now, UpdatedAt = now,
                 });
             }
 
