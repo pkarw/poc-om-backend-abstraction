@@ -39,15 +39,30 @@ services:
   # OM applies migrations + `mercato init` on boot (single-command startup).
   om-app:
     image: ${OM_APP_IMAGE:-open-mercato/app:local}
+    user: "0"
+    working_dir: /app/apps/mercato
+    # First boot runs `yarn mercato init` (migrate + seed the shared schema), then serves.
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        INIT_COMMAND='yarn mercato init' sh /app/docker/scripts/init-or-migrate.sh
+        yarn start
     environment:
+      PORT: "3000"
+      APP_URL: http://localhost:${TESTBENCH_PORT:-8088}
       DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD:-mercato}@postgres:5432/${POSTGRES_DB:-mercato}
       REDIS_URL: redis://redis:6379
+      CACHE_REDIS_URL: redis://redis:6379
+      CACHE_STRATEGY: redis
       QUEUE_STRATEGY: async
       QUEUE_REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-testbench-shared-secret-change-me}
       LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:-testbench-shared-pepper-change-me}
       OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
       OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
+    volumes:
+      - ominit:/tmp/init-marker
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,3 +119,4 @@ services:
 
 volumes:
   pgdata:
+  ominit:
