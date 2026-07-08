@@ -20,6 +20,8 @@
     <ProjectReference Include="../OpenMercato.Modules.Auth/OpenMercato.Modules.Auth.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.Directory/OpenMercato.Modules.Directory.csproj" />
     <ProjectReference Include="../OpenMercato.Modules.Dashboards/OpenMercato.Modules.Dashboards.csproj" />
+    <ProjectReference Include="../OpenMercato.Modules.Entities/OpenMercato.Modules.Entities.csproj" />
+    <ProjectReference Include="../OpenMercato.Modules.QueryIndex/OpenMercato.Modules.QueryIndex.csproj" />
   </ItemGroup>
 
 </Project>

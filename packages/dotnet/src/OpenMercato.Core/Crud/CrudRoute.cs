@@ -70,6 +70,16 @@ public static class CrudRoute
         if (config.OrgScoped && ctx!.OrganizationIds is { Count: 0 })
             return Json(CrudListQueryParser.BuildEnvelope(Array.Empty<object>(), 0, query.Page, query.PageSize), 200);
 
+        // Index-backed list (opt-in): resolve matching ids (incl. cf:<key> filter/sort) from the query
+        // index, then load those base rows by id in index order (upstream queryEngine list path, R49).
+        if (config.UseIndexList)
+        {
+            var indexQuery = services.GetRequiredService<ICrudIndexQuery>();
+            var indexed = await indexQuery.ResolveListAsync(config.EntityType, query, ctx!);
+            if (indexed is not null)
+                return await BuildIndexedListAsync(http, config, ctx!, query, indexed);
+        }
+
         var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
         q = ApplyScope(q, config, ctx!, query.WithDeleted);
         if (query.Ids.Count > 0) q = q.Where(BuildIdInPredicate(config.IdSelector, query.Ids));
@@ -85,6 +95,43 @@ public static class CrudRoute
         if (config.ListHook is not null) await config.ListHook(items, ctx!, http);
 
         var envelope = CrudListQueryParser.BuildEnvelope(items.Cast<object>().ToList(), total, query.Page, query.PageSize);
+        return Json(envelope, 200);
+    }
+
+    /// <summary>
+    /// Materialize an index-backed list page: load the base rows for the resolved ids (still applying
+    /// scope/soft-delete for safety), re-order them to match the index sort, decorate with custom fields,
+    /// and build the envelope using the index's total. The index owns paging + filter/sort semantics.
+    /// </summary>
+    private static async Task<IResult> BuildIndexedListAsync<TEntity>(
+        HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, CrudListQuery query, CrudIndexQueryResult indexed) where TEntity : class
+    {
+        var services = http.RequestServices;
+        var db = services.GetRequiredService<AppDbContext>();
+
+        var order = indexed.RecordIds;
+        List<TEntity> rows;
+        if (order.Count == 0)
+        {
+            rows = new List<TEntity>();
+        }
+        else
+        {
+            var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
+            q = ApplyScope(q, config, ctx, query.WithDeleted);
+            q = q.Where(BuildIdInPredicate(config.IdSelector, order));
+            var unordered = await q.ToListAsync();
+            var idSelector = config.IdSelector.Compile();
+            var byId = unordered.ToDictionary(idSelector);
+            rows = order.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+        }
+
+        var items = rows.Select(config.ProjectItem).ToList();
+        var customFields = services.GetRequiredService<ICrudCustomFields>();
+        await customFields.MergeIntoListItemsAsync(config.EntityType, items, ctx);
+        if (config.ListHook is not null) await config.ListHook(items, ctx, http);
+
+        var envelope = CrudListQueryParser.BuildEnvelope(items.Cast<object>().ToList(), indexed.Total, query.Page, query.PageSize);
         return Json(envelope, 200);
     }
 

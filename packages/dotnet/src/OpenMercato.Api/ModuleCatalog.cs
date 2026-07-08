@@ -3,7 +3,9 @@ using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth;
 using OpenMercato.Modules.Dashboards;
 using OpenMercato.Modules.Directory;
+using OpenMercato.Modules.Entities;
 using OpenMercato.Modules.HealthCheck;
+using OpenMercato.Modules.QueryIndex;
 
 namespace OpenMercato.Api;
 
@@ -22,5 +24,9 @@ public static class ModuleCatalog
         new DashboardsModule(),
         // audit_logs: maps action_logs + registers the CommandBus/ActionLogService (command-write infra).
         new AuditLogsModule(),
+        // entities: custom-field engine — 6 EAV tables + the real ICrudCustomFields codec + install-from-CE.
+        new EntitiesModule(),
+        // query_index: hybrid read model — entity_indexes projection + the real ICrudIndexer/ICrudIndexQuery.
+        new QueryIndexModule(),
     });
 }

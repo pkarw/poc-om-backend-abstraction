@@ -9,7 +9,9 @@ using OpenMercato.Core.Queue;
 using OpenMercato.Modules.Auth;
 using OpenMercato.Modules.Dashboards;
 using OpenMercato.Modules.Directory;
+using OpenMercato.Modules.Entities;
 using OpenMercato.Modules.HealthCheck;
+using OpenMercato.Modules.QueryIndex;
 using StackExchange.Redis;
 
 DotEnv.Load();
@@ -23,6 +25,8 @@ var registry = new ModuleRegistry(new IModule[]
     new DirectoryModule(),
     new DashboardsModule(),
     new AuditLogsModule(),
+    new EntitiesModule(),
+    new QueryIndexModule(),
 });
 
 var builder = Host.CreateApplicationBuilder(args);

@@ -56,6 +56,14 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     public int MaxPageSize { get; init; } = 100;
     public string DefaultSortField { get; init; } = "id";
 
+    /// <summary>
+    /// When true, list reads resolve matching record ids (filter/sort by base fields AND
+    /// <c>cf:&lt;key&gt;</c> custom fields) via the query index (<see cref="ICrudIndexQuery"/>) before
+    /// loading the base rows by id — the upstream <c>queryEngine</c> list path (spec 03 R49). When the
+    /// index has no result (no impl / not yet backed) the factory falls back to the base-table query.
+    /// </summary>
+    public bool UseIndexList { get; init; }
+
     /// <summary>When true (default) reads exclude rows with a non-null <c>deleted_at</c> unless <c>?withDeleted=true</c>.</summary>
     public bool SoftDelete { get; init; } = true;
 

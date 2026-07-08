@@ -92,6 +92,34 @@ public sealed class NoopCrudIndexer : ICrudIndexer
         => Task.CompletedTask;
 }
 
+/// <summary>The record ids (already paged, in sort order) + total for an index-backed list (spec 03 R49).</summary>
+public sealed record CrudIndexQueryResult(IReadOnlyList<Guid> RecordIds, int Total);
+
+/// <summary>
+/// Read-side query-index extension point — the port of upstream's <c>queryEngine</c> list path against
+/// <c>entity_indexes</c>. A <see cref="CrudConfig{TEntity}"/> that sets <c>UseIndexList = true</c> lets
+/// the CRUD factory resolve matching record ids (filtering/sorting by base fields AND <c>cf:&lt;key&gt;</c>
+/// custom fields — the thing base-table SQL cannot do) from the shared read model instead of the base
+/// table. The factory then loads those base rows by id, preserving index order.
+///
+/// The default <see cref="NoopCrudIndexQuery"/> returns <c>null</c> (→ the factory falls back to the base
+/// table). The query_index module registers a real implementation adapting <see cref="CrudListQuery"/>
+/// (<c>cf_*</c> filters, sort, paging, scope) onto its engine.
+/// </summary>
+public interface ICrudIndexQuery
+{
+    /// <summary>Resolve the page of matching record ids + total for a list, or <c>null</c> when not index-backed.</summary>
+    Task<CrudIndexQueryResult?> ResolveListAsync(
+        string entityType, CrudListQuery query, CommandContext ctx, CancellationToken ct = default);
+}
+
+/// <summary>Default: not index-backed (the factory reads the base table). Overridden by query_index.</summary>
+public sealed class NoopCrudIndexQuery : ICrudIndexQuery
+{
+    public Task<CrudIndexQueryResult?> ResolveListAsync(string entityType, CrudListQuery query, CommandContext ctx, CancellationToken ct = default)
+        => Task.FromResult<CrudIndexQueryResult?>(null);
+}
+
 /// <summary>
 /// Bridge that turns an HTTP request into the auth state the CRUD factory needs — the port of upstream
 /// <c>withCtx</c> (the request-scoped Awilix container + resolved <c>OrganizationScope</c>). Core owns the

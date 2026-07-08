@@ -16,6 +16,7 @@ public static class CrudServiceCollectionExtensions
         // No-op defaults — replaced when the entities / query_index modules land.
         services.TryAddScoped<ICrudCustomFields, NoopCrudCustomFields>();
         services.TryAddScoped<ICrudIndexer, NoopCrudIndexer>();
+        services.TryAddScoped<ICrudIndexQuery, NoopCrudIndexQuery>();
         // Fail-closed auth bridge — the Auth module registers the real ICrudRequestContext.
         services.TryAddScoped<ICrudRequestContext, DefaultCrudRequestContext>();
         return services;

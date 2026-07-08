@@ -41,8 +41,8 @@ These upstream packages are not ported as standalone modules; their behavior is 
 | [directory](upstream/analysis/modules/directory.md) | Multi-tenant directory: tenants and organizations | 1 | 🔍 | ✅ | 🔍 |
 | [auth](upstream/analysis/modules/auth.md) | User accounts, sessions, roles, password resets (JWT, RBAC features) | 1 | 🔍 | ✅ | 🔍 |
 | api_keys | Access tokens for external API access | 1 | ⬜ | ⬜ | ⬜ |
-| entities | User-defined entities, custom fields, dynamic records | 1 | ⬜ | ⬜ | ⬜ |
-| query_index | Hybrid query layer with index maintenance | 1 | ⬜ | ⬜ | ⬜ |
+| [entities](upstream/analysis/modules/entities.md) | User-defined entities, custom fields, dynamic records | 1 | ⬜ | ✅ | ⬜ |
+| [query_index](upstream/analysis/modules/query_index.md) | Hybrid query layer with index maintenance | 1 | ⬜ | ✅ | ⬜ |
 | configs | Module settings storage (`module_configs`) + system status | 1 | ⬜ | ⬜ | ⬜ |
 | feature_toggles | Global feature flags with tenant-level overrides | 1 | ⬜ | ⬜ | ⬜ |
 
