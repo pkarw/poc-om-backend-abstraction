@@ -47,8 +47,8 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
         OrganizationIdSelector = e => e.OrganizationId,
         Sorts = PeopleRoutes.BaseSorts(),
         ApplyFilters = (q, _, _) => q.Where(e => e.Kind == "company"),
-        ProjectItem = PeopleRoutes.ProjectBase,
-        ListHook = OverlayCompanyProfilesAsync,
+        ProjectItem = PeopleRoutes.ProjectListItem,
+        ListHook = OverlayCompanyProfilesListAsync,
         CreatedEvent = "customers.company.created",
         UpdatedEvent = "customers.company.updated",
         DeletedEvent = "customers.company.deleted",
@@ -79,7 +79,10 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
         },
     };
 
-    private static async Task OverlayCompanyProfilesAsync(IReadOnlyList<IDictionary<string, object?>> items, CommandContext ctx, HttpContext http)
+    /// <summary>List overlay of the company satellite profile in OM's snake_case DataQuery shape
+    /// (OM companies route <c>afterList</c>): <c>legal_name, brand_name, domain, website_url,
+    /// industry, size_bucket, annual_revenue</c>.</summary>
+    private static async Task OverlayCompanyProfilesListAsync(IReadOnlyList<IDictionary<string, object?>> items, CommandContext ctx, HttpContext http)
     {
         if (items.Count == 0) return;
         var db = http.RequestServices.GetRequiredService<AppDbContext>();
@@ -89,9 +92,9 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
         foreach (var item in items)
         {
             if (!Guid.TryParse(item["id"]?.ToString(), out var id) || !byEntity.TryGetValue(id, out var p)) continue;
-            item["legalName"] = p.LegalName; item["brandName"] = p.BrandName; item["domain"] = p.Domain;
-            item["websiteUrl"] = p.WebsiteUrl; item["industry"] = p.Industry; item["sizeBucket"] = p.SizeBucket;
-            item["annualRevenue"] = p.AnnualRevenue;
+            item["legal_name"] = p.LegalName; item["brand_name"] = p.BrandName; item["domain"] = p.Domain;
+            item["website_url"] = p.WebsiteUrl; item["industry"] = p.Industry; item["size_bucket"] = p.SizeBucket;
+            item["annual_revenue"] = p.AnnualRevenue;
         }
     }
 

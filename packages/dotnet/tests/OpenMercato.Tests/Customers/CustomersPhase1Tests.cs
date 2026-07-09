@@ -129,7 +129,7 @@ public class CustomersPhase1Tests
         var filtered = await ReadJson(await h.Client.GetAsync("/api/customers/people?cf_buying_role=champion"));
         Assert.Equal(1, filtered.GetProperty("total").GetInt32());
         var item = filtered.GetProperty("items")[0];
-        Assert.Equal("Mia Johnson", item.GetProperty("displayName").GetString());
+        Assert.Equal("Mia Johnson", item.GetProperty("display_name").GetString()); // list uses OM snake_case DataQuery shape
         Assert.Equal("champion", item.GetProperty("buying_role").GetString()); // bare-key cf read on list
 
         // Detail: profile + merged custom fields.

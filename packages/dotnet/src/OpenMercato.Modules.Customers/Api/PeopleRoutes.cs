@@ -57,8 +57,8 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         OrganizationIdSelector = e => e.OrganizationId,
         Sorts = BaseSorts(),
         ApplyFilters = (q, _, _) => q.Where(e => e.Kind == "person"),
-        ProjectItem = ProjectBase,
-        ListHook = OverlayPersonProfilesAsync,
+        ProjectItem = ProjectListItem,
+        ListHook = OverlayPersonProfilesListAsync,
         CreatedEvent = "customers.person.created",
         UpdatedEvent = "customers.person.updated",
         DeletedEvent = "customers.person.deleted",
@@ -126,7 +126,38 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         ["updatedAt"] = CustomersHttp.Iso(e.UpdatedAt),
     };
 
-    private static async Task OverlayPersonProfilesAsync(IReadOnlyList<IDictionary<string, object?>> items, CommandContext ctx, HttpContext http)
+    /// <summary>
+    /// List-row projection in the upstream DataQuery shape: snake_case field keys matching the raw
+    /// entity columns / query-index doc, which is exactly what OM's people/companies DataTable
+    /// <c>mapApiItem</c> reads (<c>item.display_name</c>, <c>item.primary_email</c>, …). The detail
+    /// endpoints keep the camelCase DTO shape (<see cref="ProjectBase"/>) that OM's detail components
+    /// read (<c>data.person.displayName</c>) — the two OM surfaces genuinely differ.
+    /// </summary>
+    internal static IDictionary<string, object?> ProjectListItem(CustomerEntity e) => new Dictionary<string, object?>
+    {
+        ["id"] = e.Id.ToString(),
+        ["display_name"] = e.DisplayName,
+        ["description"] = e.Description,
+        ["owner_user_id"] = e.OwnerUserId?.ToString(),
+        ["primary_email"] = e.PrimaryEmail,
+        ["primary_phone"] = e.PrimaryPhone,
+        ["status"] = e.Status,
+        ["lifecycle_stage"] = e.LifecycleStage,
+        ["source"] = e.Source,
+        ["temperature"] = e.Temperature,
+        ["renewal_quarter"] = e.RenewalQuarter,
+        ["next_interaction_at"] = CustomersHttp.Iso(e.NextInteractionAt),
+        ["is_active"] = e.IsActive,
+        ["organization_id"] = e.OrganizationId.ToString(),
+        ["tenant_id"] = e.TenantId.ToString(),
+        ["created_at"] = CustomersHttp.Iso(e.CreatedAt),
+        ["updated_at"] = CustomersHttp.Iso(e.UpdatedAt),
+    };
+
+    /// <summary>List overlay of the person satellite profile in OM's snake_case DataQuery shape
+    /// (OM people route <c>afterList</c>): <c>first_name, last_name, preferred_name, job_title,
+    /// department, seniority, timezone, linked_in_url, twitter_url, company_entity_id</c>.</summary>
+    private static async Task OverlayPersonProfilesListAsync(IReadOnlyList<IDictionary<string, object?>> items, CommandContext ctx, HttpContext http)
     {
         if (items.Count == 0) return;
         var db = http.RequestServices.GetRequiredService<AppDbContext>();
@@ -136,10 +167,10 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         foreach (var item in items)
         {
             if (!Guid.TryParse(item["id"]?.ToString(), out var id) || !byEntity.TryGetValue(id, out var p)) continue;
-            item["firstName"] = p.FirstName; item["lastName"] = p.LastName; item["preferredName"] = p.PreferredName;
-            item["jobTitle"] = p.JobTitle; item["department"] = p.Department; item["seniority"] = p.Seniority;
-            item["timezone"] = p.Timezone; item["linkedInUrl"] = p.LinkedInUrl; item["twitterUrl"] = p.TwitterUrl;
-            item["companyEntityId"] = p.CompanyEntityId?.ToString();
+            item["first_name"] = p.FirstName; item["last_name"] = p.LastName; item["preferred_name"] = p.PreferredName;
+            item["job_title"] = p.JobTitle; item["department"] = p.Department; item["seniority"] = p.Seniority;
+            item["timezone"] = p.Timezone; item["linked_in_url"] = p.LinkedInUrl; item["twitter_url"] = p.TwitterUrl;
+            item["company_entity_id"] = p.CompanyEntityId?.ToString();
         }
     }
 
