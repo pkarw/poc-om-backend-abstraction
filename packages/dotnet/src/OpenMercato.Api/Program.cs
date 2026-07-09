@@ -42,24 +42,33 @@ registry.ConfigureServices(builder.Services);
 var app = builder.Build();
 
 // The api container entrypoint applies migrations before serving traffic.
-// In the OM testbench (docker-compose.testbench), Open Mercato OWNS the shared schema and seeds
-// it, so the .NET API runs migrations-off (OM_SKIP_MIGRATIONS=1) and does not seed. Its byte-exact
-// ports read/write the same auth/directory/dashboards tables OM created.
-var skipMigrations = (Environment.GetEnvironmentVariable("OM_SKIP_MIGRATIONS") ?? "")
-    .Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
+//
+// Two schema-ownership modes:
+//   • Standalone (default): the .NET API owns the schema — migrate, then seed the full dataset.
+//   • Testbench (OM_SKIP_MIGRATIONS=1): Open Mercato OWNS + migrates the shared schema; the .NET
+//     API runs migrations-off. Historically it also skipped seeding and relied on OM's `mercato
+//     init` — but OM seeds customer PII with per-tenant DEKs the port can't read. So when
+//     OM_SEED_ON_BOOT=1 the .NET API seeds the shared schema itself (after OM has migrated it),
+//     making the ported modules' data self-consistent (write and read with the same crypto).
+var skipMigrations = EnvFlag("OM_SKIP_MIGRATIONS");
+var seedOnBoot = EnvFlag("OM_SEED_ON_BOOT");
+
 if (skipMigrations)
-    app.Logger.LogInformation("OM_SKIP_MIGRATIONS set — running against an externally-owned schema (no migrate, no seed).");
+    app.Logger.LogInformation("OM_SKIP_MIGRATIONS set — running against an externally-owned schema (no migrate).");
 else
-{
     await MigrateAsync(app);
 
-    // Env-gated, idempotent boot seeding of the full Acme dataset (OM_INIT_SUPERADMIN_EMAIL/PASSWORD).
-    // Identical to CLI `init`/`seed` — see OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.
-    await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
-
-    // currencies setup.ts seedDefaults parity: ensure the default currency list for every org scope.
-    await OpenMercato.Modules.Currencies.Seeding.CurrenciesSeeder.RunBootAsync(app.Services, app.Logger);
+// Seed when we own the schema (normal boot) or when explicitly asked to seed an externally-owned
+// one (testbench). For an externally-owned schema, first wait until OM has created the tables.
+if (!skipMigrations || seedOnBoot)
+{
+    if (skipMigrations)
+        await WaitForSchemaAsync(app);
+    await SeedAllAsync(app);
 }
+
+static bool EnvFlag(string name) =>
+    (Environment.GetEnvironmentVariable(name) ?? "").Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
 
 // Liveness: must not touch Postgres or Redis.
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", service = "dotnet-api" }));
@@ -93,4 +102,64 @@ static async Task MigrateAsync(WebApplication app)
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
     }
+}
+
+// Wait for an externally-owned schema (testbench: OM migrates it) to appear before seeding.
+// The dotnet-api container also depends_on the om-app healthcheck, so this is a belt-and-suspenders
+// poll for the last-needed tables rather than the primary ordering mechanism.
+static async Task WaitForSchemaAsync(WebApplication app)
+{
+    // Every table the seeders write to across the ported modules — wait for all of them so we never
+    // seed against a half-migrated schema regardless of OM's per-module migration ordering.
+    var required = new[]
+    {
+        "tenants", "organizations", "users", "roles", "role_acls",
+        "currencies", "dashboard_role_widgets",
+        "custom_field_defs", "custom_field_values", "entity_indexes",
+        "customer_entities", "customer_pipelines", "customer_deals", "customer_dictionary_entries",
+    };
+    const int maxAttempts = 150; // ~5 min at 2s
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var missing = new List<string>();
+            foreach (var table in required)
+            {
+                var present = await db.Database
+                    .SqlQueryRaw<string?>("SELECT to_regclass('public.' || {0})::text AS \"Value\"", table)
+                    .ToListAsync();
+                if (present.Count == 0 || present[0] is null) missing.Add(table);
+            }
+            if (missing.Count == 0)
+            {
+                app.Logger.LogInformation("External schema ready — all seed-target tables present.");
+                return;
+            }
+            if (attempt % 5 == 1)
+                app.Logger.LogInformation("Waiting for external schema; missing tables: {Missing} (attempt {Attempt}/{Max}).",
+                    string.Join(", ", missing), attempt, maxAttempts);
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            app.Logger.LogWarning(ex, "Schema probe {Attempt}/{Max} failed; retrying in 2s.", attempt, maxAttempts);
+        }
+        if (attempt >= maxAttempts)
+            throw new InvalidOperationException("Timed out waiting for the externally-owned schema to be migrated.");
+        await Task.Delay(TimeSpan.FromSeconds(2));
+    }
+}
+
+// Idempotent boot seeding, mirroring `mercato init`: first provision the initial tenant/org/users/
+// roles/ACLs (the port of core setupInitialTenant), then run every module's own setup hooks
+// (onTenantCreated → seedDefaults → seedExamples) in dependency order across each scope. Safe to run
+// repeatedly (provisioning + every module hook guard their own rows).
+static async Task SeedAllAsync(WebApplication app)
+{
+    // 1) core provisioning: the Acme tenant/org, roles, ACLs, superadmin/admin/employee users.
+    await OpenMercato.Modules.Directory.Seeding.InitialTenantSeeder.RunBootAsync(app.Services, app.Logger);
+    // 2) per-module data: currencies, dashboards, customers, … each owns its seedDefaults/seedExamples.
+    await OpenMercato.Core.Modules.ModuleSeedRunner.RunAsync(app.Services, app.Logger, includeExamples: true);
 }

@@ -36,18 +36,30 @@ services:
 
   # The real Open Mercato app. Build its image from your open-mercato checkout first:
   #   cd <open-mercato> && docker build -t open-mercato/app:local .
-  # OM applies migrations + `mercato init` on boot (single-command startup).
+  # OM MIGRATES the shared schema only — it does NOT seed. The .NET API seeds instead (OM_SEED_ON_BOOT
+  # below), so all ported-module data is written with the port's own crypto and is self-consistent
+  # (OM's `mercato init` would seed PII under per-tenant DEKs the port can't read). See
+  # testbench/INTEGRATION-customers.md.
   om-app:
     image: ${OM_APP_IMAGE:-open-mercato/app:local}
     user: "0"
     working_dir: /app/apps/mercato
-    # First boot runs `yarn mercato init` (migrate + seed the shared schema), then serves.
+    # Migrate-only: run `yarn db:migrate` (== `mercato db migrate`, schema only, NO seed) then serve.
+    # INIT_COMMAND is set to the migrate command so init-or-migrate.sh never runs `mercato init`.
     command:
       - /bin/sh
       - -lc
       - |
-        INIT_COMMAND='yarn mercato init' sh /app/docker/scripts/init-or-migrate.sh
+        INIT_COMMAND='yarn db:migrate' MIGRATE_COMMAND='yarn db:migrate' sh /app/docker/scripts/init-or-migrate.sh
         yarn start
+    healthcheck:
+      # Healthy once OM answers HTTP — i.e. migrations are done and the server is up. The .NET API
+      # gates its seeding on this (depends_on: service_healthy) so it never seeds a half-migrated DB.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
     environment:
       PORT: "3000"
       APP_URL: http://localhost:${TESTBENCH_PORT:-8088}
@@ -71,8 +83,10 @@ services:
       redis:
         condition: service_healthy
 
-  # The ported .NET API. Runs migrations-off — OM owns the schema. Serves ONLY the
-  # ported modules; the proxy sends only their /api paths here.
+  # The ported .NET API. Runs migrations-off (OM owns + migrates the schema) but SEEDS it
+  # (OM_SEED_ON_BOOT=1): after OM has migrated, the .NET API provisions the Acme tenant/org/users and
+  # every ported module's data (currencies, dashboards, customers examples). Serves ONLY the ported
+  # modules; the proxy sends only their /api paths here.
   dotnet-api:
     build:
       context: ../packages/dotnet
@@ -86,11 +100,16 @@ services:
       TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY:-testbench-shared-encryption-key-change-me}
       TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_FALLBACK_KEY:-testbench-shared-encryption-key-change-me}
       OM_SKIP_MIGRATIONS: "1"
+      OM_SEED_ON_BOOT: "1"
+      OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
+      OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
       PORT: "8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      om-app:
         condition: service_healthy
 
   dotnet-worker:

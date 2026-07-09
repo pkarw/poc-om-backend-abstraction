@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Dashboards.Api;
 using OpenMercato.Modules.Dashboards.Data;
+using OpenMercato.Modules.Dashboards.Lib;
+using OpenMercato.Modules.Dashboards.Seeding;
 using OpenMercato.Modules.Dashboards.Services;
 
 namespace OpenMercato.Modules.Dashboards;
@@ -131,5 +134,31 @@ public sealed class DashboardsModule : IModule
         foreach (var type in implementations)
             if (Activator.CreateInstance(type) is IDashboardRouteGroup group)
                 group.Map(routes);
+    }
+
+    /// <summary>
+    /// setup.ts <c>onTenantCreated</c> → <c>seedDashboardDefaultsForTenant</c>: per-role widget
+    /// availability (superadmin/admin → all widgets, employee → defaultEnabled), tenant-scoped
+    /// (org-null). Idempotent upsert. Runs once per scope; the org-null record is shared per tenant.
+    /// </summary>
+    public async Task OnTenantCreatedAsync(ModuleSeedContext ctx)
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();
+        await DashboardSeeder.SeedDefaultsForTenantAsync(
+            db, ctx.TenantId, organizationId: null, roleNames: null, widgetIds: null, ctx.CancellationToken);
+    }
+
+    /// <summary>
+    /// setup.ts <c>seedDefaults</c> → <c>appendWidgetsToRoles</c>: append the analytics widget ids to
+    /// the admin + employee role records (append-only). Mirrors the init-flow
+    /// <c>dashboards enable-analytics-widgets --roles admin,employee</c> step.
+    /// </summary>
+    public async Task SeedDefaultsAsync(ModuleSeedContext ctx)
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();
+        await DashboardSeeder.AppendWidgetsToRolesAsync(
+            db, ctx.TenantId, organizationId: null,
+            roleNames: new[] { "admin", "employee" },
+            widgetIds: WidgetCatalog.AnalyticsWidgetIds(), ctx.CancellationToken);
     }
 }

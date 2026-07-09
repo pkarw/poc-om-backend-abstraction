@@ -74,4 +74,40 @@ public interface IModule
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultRoleFeatures =>
         new Dictionary<string, IReadOnlyList<string>>();
+
+    // --- Per-module setup / seeding (upstream setup.ts ModuleSetupConfig) --------------
+    // The host orchestrator (ModuleSeedRunner) calls these per (tenant, organization) scope, for
+    // every module in registration (= dependency) order — exactly like `mercato init`'s module loops.
+    // All three are OPTIONAL (default no-op) and MUST be idempotent.
+
+    /// <summary>
+    /// Lightweight structural defaults right after the tenant/org exists (upstream
+    /// <c>onTenantCreated</c>): settings rows, per-role widget availability, sequences. Always runs.
+    /// </summary>
+    Task OnTenantCreatedAsync(ModuleSeedContext ctx) => Task.CompletedTask;
+
+    /// <summary>
+    /// Reference/structural data for a scope (upstream <c>seedDefaults</c>): dictionaries, statuses,
+    /// default pipelines, custom-field definitions. Always runs (not gated by --no-examples).
+    /// </summary>
+    Task SeedDefaultsAsync(ModuleSeedContext ctx) => Task.CompletedTask;
+
+    /// <summary>
+    /// Demo/example data for a scope (upstream <c>seedExamples</c>): sample companies, people, deals.
+    /// Runs unless examples are suppressed.
+    /// </summary>
+    Task SeedExamplesAsync(ModuleSeedContext ctx) => Task.CompletedTask;
 }
+
+/// <summary>
+/// Scope + services handed to a module's setup hooks (the .NET analog of upstream
+/// <c>InitSetupContext</c> = <c>{ em, tenantId, organizationId, container }</c>). <see cref="Services"/>
+/// is a request-scoped provider: resolve <c>AppDbContext</c>, <c>ModuleRegistry</c>, <c>ICrudIndexer</c>
+/// etc. from it. All modules seeding one scope share the same <see cref="Services"/> scope.
+/// </summary>
+public sealed record ModuleSeedContext(
+    IServiceProvider Services,
+    Guid TenantId,
+    Guid OrganizationId,
+    bool IncludeExamples = true,
+    CancellationToken CancellationToken = default);

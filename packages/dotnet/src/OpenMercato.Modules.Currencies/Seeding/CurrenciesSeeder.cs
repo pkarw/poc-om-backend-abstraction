@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using OpenMercato.Core.Data;
 using OpenMercato.Modules.Currencies.Data;
 
@@ -76,28 +74,4 @@ public static class CurrenciesSeeder
         if (touched) await db.SaveChangesAsync(ct);
         return touched;
     }
-
-    /// <summary>
-    /// Boot seeding (runs from the API host after migrations): seeds the example currencies for every
-    /// existing organization scope. Idempotent — safe to run on every start.
-    /// </summary>
-    public static async Task RunBootAsync(IServiceProvider services, ILogger logger, CancellationToken ct = default)
-    {
-        using var scope = services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        // (tenantId, organizationId) pairs from the directory organizations table.
-        var scopes = await db.Database.SqlQueryRaw<OrgScopeRow>(
-            "SELECT tenant_id AS \"TenantId\", id AS \"OrganizationId\" FROM organizations WHERE deleted_at IS NULL").ToListAsync(ct);
-
-        var seededScopes = 0;
-        foreach (var s in scopes)
-            if (await SeedExampleCurrenciesAsync(db, s.TenantId, s.OrganizationId, ct))
-                seededScopes++;
-
-        if (seededScopes > 0)
-            logger.LogInformation("Currencies seed: default currencies ensured for {Count} organization scope(s).", seededScopes);
-    }
-
-    private sealed record OrgScopeRow(Guid TenantId, Guid OrganizationId);
 }

@@ -2,10 +2,12 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenMercato.Core.Commands;
+using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Currencies.Api;
 using OpenMercato.Modules.Currencies.Commands;
 using OpenMercato.Modules.Currencies.Data;
+using OpenMercato.Modules.Currencies.Seeding;
 using OpenMercato.Modules.Currencies.Services;
 
 namespace OpenMercato.Modules.Currencies;
@@ -145,4 +147,11 @@ public sealed class CurrenciesModule : IModule
     }
 
     public void MapRoutes(IEndpointRouteBuilder routes) => CurrenciesRoutes.Map(routes);
+
+    /// <summary>setup.ts <c>seedDefaults</c>: the 10 example currencies (USD base) for this scope.</summary>
+    public async Task SeedDefaultsAsync(ModuleSeedContext ctx)
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();
+        await CurrenciesSeeder.SeedExampleCurrenciesAsync(db, ctx.TenantId, ctx.OrganizationId, ctx.CancellationToken);
+    }
 }

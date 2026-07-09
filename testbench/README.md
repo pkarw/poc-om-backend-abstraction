@@ -13,10 +13,15 @@ modules that have been ported, so you can log in and use the app against your po
 
 ## 🔑 How it works
 
-- **One shared Postgres.** Open Mercato owns and **migrates** the full schema and
-  **seeds** it (`mercato init` → Acme Corp, `superadmin@acme.com` / `secret`).
-- The **.NET API runs migrations-off** (`OM_SKIP_MIGRATIONS=1`). Its byte-exact ports
-  read/write the very same `auth` / `directory` / `dashboards` tables OM created.
+- **One shared Postgres.** Open Mercato owns and **migrates** the full schema
+  (`yarn db:migrate`, schema only). It does **not** seed — `mercato init` never runs.
+- The **.NET API runs migrations-off but SEEDS** (`OM_SKIP_MIGRATIONS=1` +
+  `OM_SEED_ON_BOOT=1`). After OM has migrated, the port provisions the Acme tenant
+  (`superadmin@acme.com` / `secret`) and every ported module's data via each module's own
+  setup hooks (the port of upstream `setup.ts` — see `INTEGRATION-customers.md`). Because
+  the port both writes and reads the data, content stays self-consistent (no per-tenant-DEK
+  PII the port can't decrypt). Its byte-exact ports use the very same `auth` / `directory`
+  / `dashboards` / `customers` / … tables.
 - Both share `JWT_SECRET` **and** `LOOKUP_HASH_PEPPER`, so a JWT/session and the
   email lookup hash are interchangeable: you log in through OM's UI, the request is
   proxied to .NET, .NET authenticates against OM-seeded users and issues a JWT that
@@ -66,10 +71,14 @@ org-switcher all pass **through the Caddy proxy**. The one piece you supply is t
 ## ⚠️ Parity notes (honest status)
 
 - **Login, RBAC, JWT, sessions, dashboard layout, org switcher** → served by .NET, verified.
+- **Customers CRM** → served by .NET and **seeded by .NET** (3 companies, 6 people, 6 deals,
+  default pipeline). Content reads back cleanly through the proxy — see
+  `./integration-customers.sh` and `INTEGRATION-customers.md`.
 - **Widget data** on the dashboard is placeholder until the source modules
   (`sales`/`catalog`/…) are ported — widgets render in their empty state.
-- **Email at-rest encryption**: .NET uses a single app-key AES-GCM (ADR in
-  `packages/dotnet/docs/decisions`), while OM uses per-tenant DEKs. The **email lookup
-  hash matches** (shared pepper), which is what login needs; decrypting an OM-written
-  email for *display* in a .NET response is a tracked parity item.
+- **At-rest encryption**: because the .NET port now **seeds** the shared schema, it both writes
+  and reads PII with its own app-key AES-GCM (ADR in `packages/dotnet/docs/decisions`), so the
+  data is self-consistent — no garbled content. Being byte-compatible with OM's per-tenant DEK
+  scheme (for the case where OM itself writes the PII) is still a tracked parity item; the email
+  **lookup hash** already matches (shared pepper), which is all login needs.
 - Only modules listed in `ported-modules.txt` are served by .NET; the rest are OM's.

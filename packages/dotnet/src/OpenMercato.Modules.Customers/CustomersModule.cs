@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenMercato.Core.Crud;
+using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Customers.Api;
 using OpenMercato.Modules.Customers.Data;
+using OpenMercato.Modules.Customers.Seeding;
 
 namespace OpenMercato.Modules.Customers;
 
@@ -722,5 +725,28 @@ public sealed class CustomersModule : IModule
             e.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
         });
+    }
+
+    /// <summary>
+    /// setup.ts <c>seedDefaults</c>: install the CE field sets, seed the tag pool, the customer
+    /// dictionary defaults, and the default pipeline (+ its 8 stages) for this scope. Idempotent.
+    /// </summary>
+    public async Task SeedDefaultsAsync(ModuleSeedContext ctx)
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();
+        var registry = ctx.Services.GetRequiredService<ModuleRegistry>();
+        await CustomersSeeder.SeedDefaultsAsync(db, registry, ctx.TenantId, ctx.OrganizationId, ctx.CancellationToken);
+    }
+
+    /// <summary>
+    /// setup.ts <c>seedExamples</c>: the example companies/people/deals (Brightside Solar,
+    /// Harborview Analytics, Copperleaf Design Co.), projected into the query index. Idempotent.
+    /// </summary>
+    public async Task SeedExamplesAsync(ModuleSeedContext ctx)
+    {
+        var db = ctx.Services.GetRequiredService<AppDbContext>();
+        var registry = ctx.Services.GetRequiredService<ModuleRegistry>();
+        var indexer = ctx.Services.GetRequiredService<ICrudIndexer>();
+        await CustomersSeeder.SeedExamplesAsync(db, registry, indexer, ctx.TenantId, ctx.OrganizationId, ctx.CancellationToken);
     }
 }

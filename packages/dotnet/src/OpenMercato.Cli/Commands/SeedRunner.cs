@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
 using OpenMercato.Modules.Auth.Security;
@@ -18,6 +19,11 @@ internal static class SeedRunner
         var encryption = scope.ServiceProvider.GetRequiredService<EncryptionService>();
 
         var result = await InitialTenantSeeder.SetupInitialTenantAsync(db, registry, hasher, encryption, options);
+
+        // After core provisioning, run every module's own setup hooks (seedDefaults/seedExamples) —
+        // the port of `mercato init`'s per-module seed loops. Same dataset the API boot path produces.
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("seed");
+        await ModuleSeedRunner.RunAsync(services, logger, includeExamples: true);
 
         if (result.ReusedExistingUser)
         {
