@@ -103,6 +103,8 @@ services:
       OM_SEED_ON_BOOT: "1"
       OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
       OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
+      # Sidebar: .NET fetches OM's nav from here and filters it to the ported modules only.
+      OM_NAV_UPSTREAM: http://om-app:3000
       PORT: "8080"
     depends_on:
       postgres:

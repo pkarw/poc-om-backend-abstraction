@@ -19,14 +19,9 @@
 
 :80 {
 	# --- BEGIN generated ported-module routes (./gen-proxy.sh) ---
-	# Frontend-chrome exception: the backend sidebar/nav is built from OM's frontend page
-	# registry (its React `page.meta` files), which the API-only .NET port cannot know — its
-	# /api/auth/admin/nav returns empty `groups`, so the sidebar would show no module items.
-	# Keep it on OM even though `auth` is ported. Must precede @ported (first match wins).
-	@om_frontend path /api/auth/admin/nav
-	handle @om_frontend {
-		reverse_proxy om-app:3000
-	}
+	# NOTE: /api/auth/admin/nav (the sidebar) is served by .NET, which fetches OM's own nav
+	# (OM_NAV_UPSTREAM) and FILTERS it to the ported modules — so the testbench sidebar shows only
+	# ported modules. See OpenMercato.Modules.Auth/Api/AdminNavRouteGroup.cs.
 	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
 	handle @ported {
 		reverse_proxy dotnet-api:8080
