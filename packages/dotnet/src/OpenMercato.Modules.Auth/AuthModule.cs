@@ -12,7 +12,7 @@ namespace OpenMercato.Modules.Auth;
 /// <summary>
 /// The auth module (upstream packages/core/src/modules/auth). Owns users, roles, sessions,
 /// ACLs, password resets, consents and sidebar customization. The byte-exact DDL is created by
-/// the raw-SQL migration in OpenMercato.Api/Migrations (AddAuthModule); ConfigureModel here only
+/// the raw-SQL migration in the module's Migrations/ folder (AddAuthModule); ConfigureModel here only
 /// wires the runtime EF model (table/column names) for querying.
 /// </summary>
 public sealed class AuthModule : IModule

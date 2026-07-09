@@ -2,7 +2,7 @@ namespace OpenMercato.Modules.Directory.Data;
 
 // Plain POCO entities mirroring upstream packages/core/src/modules/directory/data/entities.ts.
 // Byte-exact table/column/index/constraint mapping lives in DirectoryModule.ConfigureModel; the
-// DDL is created by the raw-SQL migration OpenMercato.Api/Migrations AddDirectoryModule. Both
+// DDL is created by the raw-SQL migration the module's Migrations/AddDirectoryModule. Both
 // tables soft-delete via nullable DeletedAt. The organization hierarchy arrays are stored as raw
 // jsonb string arrays (default '[]'); tenancy is by convention (tenant_id FK only, parent_id/root_id
 // carry NO DB FK — the tree is managed in Lib/OrganizationHierarchy).

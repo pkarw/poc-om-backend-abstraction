@@ -10,7 +10,7 @@ namespace OpenMercato.Modules.Directory;
 /// <summary>
 /// The directory module (upstream packages/core/src/modules/directory). Owns the canonical
 /// <c>tenants</c> and <c>organizations</c> tables plus the organization-hierarchy engine. The
-/// byte-exact DDL is created by the raw-SQL migration in OpenMercato.Api/Migrations
+/// byte-exact DDL is created by the raw-SQL migration in this module's Migrations/ folder
 /// (AddDirectoryModule); ConfigureModel here only wires the runtime EF model (table/column names).
 /// Directory has a mutual runtime dependency on auth (RBAC + tenant-selection guards) and is ported
 /// together with it.

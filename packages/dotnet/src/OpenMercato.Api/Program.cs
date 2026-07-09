@@ -22,10 +22,12 @@ builder.Services.AddSingleton(registry);
 builder.Services.AddSingleton<OpenMercato.Core.Modules.INotificationCatalog, OpenMercato.Core.Modules.NotificationCatalog>();
 builder.Services.AddSingleton<OpenMercato.Core.Modules.ICustomFieldRegistry, OpenMercato.Core.Modules.CustomFieldRegistry>();
 builder.Services.AddDbContext<AppDbContext>(options =>
+    // AppDbContext is the runtime QUERY context only; it no longer owns migrations. Each module
+    // applies its own raw-SQL migrations through ModuleMigrations.ApplyAllAsync (per-module context +
+    // history table). The model snapshot intentionally does not describe module tables, so ignore the
+    // resulting drift warning (relevant only if this context were ever migrated/EnsureCreated'd).
     options
-        .UseNpgsql(config.NpgsqlConnectionString, npgsql => npgsql.MigrationsAssembly("OpenMercato.Api"))
-        // Modules with byte-exact parity ship hand-written raw-SQL migrations, so the EF model
-        // snapshot intentionally does not describe their tables. Ignore the resulting drift warning.
+        .UseNpgsql(config.NpgsqlConnectionString)
         .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.RedisUrl)));
@@ -83,25 +85,10 @@ app.Run();
 
 static async Task MigrateAsync(WebApplication app)
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    // Tolerate a cold Postgres on first `make up` (DNS + init can exceed 20s).
-    const int maxAttempts = 30;
-    for (var attempt = 1; ; attempt++)
-    {
-        try
-        {
-            await db.Database.MigrateAsync();
-            app.Logger.LogInformation("Database migrations applied.");
-            return;
-        }
-        catch (Exception ex) when (attempt < maxAttempts)
-        {
-            app.Logger.LogWarning(ex, "Migration attempt {Attempt}/{Max} failed; retrying in 2s.",
-                attempt, maxAttempts);
-            await Task.Delay(TimeSpan.FromSeconds(2));
-        }
-    }
+    // Per-module migrations: each module owns its migrations context + history table. The cold-Postgres
+    // retry logic lives inside ApplyAllAsync (tolerates a cold DB on first `make up`).
+    var config = app.Services.GetRequiredService<AppConfig>();
+    await ModuleMigrations.ApplyAllAsync(config.NpgsqlConnectionString, app.Logger);
 }
 
 // Wait for an externally-owned schema (testbench: OM migrates it) to appear before seeding.

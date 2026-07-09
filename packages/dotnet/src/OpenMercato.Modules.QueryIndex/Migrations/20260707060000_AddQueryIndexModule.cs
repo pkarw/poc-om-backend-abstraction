@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.QueryIndex.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the query_index (hybrid read-model) tables — the .NET port of upstream
@@ -14,7 +13,7 @@ namespace OpenMercato.Api.Migrations
     /// search-token tables. jsonb for doc/embedding/payload/details; timestamptz for all timestamps; no
     /// cross-table FKs. Raw SQL — the model snapshot is intentionally not updated. Applied by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(QueryIndexMigrationsDbContext))]
     [Migration("20260707060000_AddQueryIndexModule")]
     public partial class AddQueryIndexModule : Migration
     {

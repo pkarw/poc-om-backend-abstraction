@@ -1,16 +1,15 @@
 using System;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.HealthCheck.Migrations
 {
     /// <summary>
     /// Initial migration: creates om_health_ping for the health_check module.
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(HealthCheckMigrationsDbContext))]
     [Migration("20260707000000_InitialCreate")]
     public partial class InitialCreate : Migration
     {

@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Currencies.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the currencies module tables — the .NET port of upstream
@@ -14,7 +13,7 @@ namespace OpenMercato.Api.Migrations
     /// FKs (pairs reference codes, not currency ids — matching upstream). Raw SQL — the model snapshot is
     /// intentionally not updated. Applied by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(CurrenciesMigrationsDbContext))]
     [Migration("20260707070000_AddCurrenciesModule")]
     public partial class AddCurrenciesModule : Migration
     {

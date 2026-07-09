@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Auth.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the 11 auth tables (upstream migration order 20251030150038 ..
@@ -14,7 +13,7 @@ namespace OpenMercato.Api.Migrations
     /// updated for these tables (see SKILL note). Discovered and applied at runtime by
     /// AppDbContext.Database.MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(AuthMigrationsDbContext))]
     [Migration("20260707010000_AddAuthModule")]
     public partial class AddAuthModule : Migration
     {

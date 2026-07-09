@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Customers.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the customers (CRM) module — all 25 tables consolidated from the 21 upstream
@@ -20,7 +19,7 @@ namespace OpenMercato.Api.Migrations
     /// customer_activities.deal_id, customer_comments.deal_id). Raw SQL — the model snapshot is
     /// intentionally not updated. Applied by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(CustomersMigrationsDbContext))]
     [Migration("20260707090000_AddCustomersModule")]
     public partial class AddCustomersModule : Migration
     {

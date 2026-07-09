@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Entities.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the entities (custom-field engine) tables — the .NET collapse of upstream
@@ -16,7 +15,7 @@ namespace OpenMercato.Api.Migrations
     /// <c>timestamptz</c>; no cross-table FKs). Raw SQL — the model snapshot is intentionally not
     /// updated. Applied at runtime by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(EntitiesMigrationsDbContext))]
     [Migration("20260707050000_AddEntitiesModule")]
     public partial class AddEntitiesModule : Migration
     {

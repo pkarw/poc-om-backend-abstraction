@@ -2,7 +2,7 @@ namespace OpenMercato.Modules.Auth.Data;
 
 // Plain POCO entities mirroring upstream packages/core/src/modules/auth/data/entities.ts.
 // Byte-exact table/column/index/constraint mapping lives in AuthModule.ConfigureModel;
-// the DDL is created by the raw-SQL migration OpenMercato.Api/Migrations AddAuthModule.
+// the DDL is created by the raw-SQL migration the module's Migrations/AddAuthModule.
 // All tables soft-delete via nullable DeletedAt; tenant_id/organization_id are bare uuids
 // (tenancy by convention, no cross-module FK). jsonb columns are stored as raw JSON strings.
 

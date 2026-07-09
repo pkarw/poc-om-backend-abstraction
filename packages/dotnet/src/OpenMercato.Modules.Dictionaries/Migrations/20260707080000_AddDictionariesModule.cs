@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Dictionaries.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the dictionaries module tables — the .NET port of the three upstream
@@ -15,7 +14,7 @@ namespace OpenMercato.Api.Migrations
     /// <c>on update cascade</c>. Raw SQL — the model snapshot is intentionally not updated. Applied by
     /// MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(DictionariesMigrationsDbContext))]
     [Migration("20260707080000_AddDictionariesModule")]
     public partial class AddDictionariesModule : Migration
     {

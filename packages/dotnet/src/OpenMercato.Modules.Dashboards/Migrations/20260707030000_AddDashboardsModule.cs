@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Dashboards.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the dashboards tables <c>dashboard_layouts</c>,
@@ -14,7 +13,7 @@ namespace OpenMercato.Api.Migrations
     /// 'inherit'</c>; three unique constraints, no secondary indexes. Raw SQL — the model snapshot is
     /// intentionally not updated. Applied at runtime by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(DashboardsMigrationsDbContext))]
     [Migration("20260707030000_AddDashboardsModule")]
     public partial class AddDashboardsModule : Migration
     {

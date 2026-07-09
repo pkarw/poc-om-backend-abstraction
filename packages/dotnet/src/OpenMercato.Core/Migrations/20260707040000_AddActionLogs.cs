@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Core.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the audit_logs <c>action_logs</c> table (upstream MikroORM migrations
@@ -17,7 +16,7 @@ namespace OpenMercato.Api.Migrations
     /// intentionally not updated. Applied at runtime by MigrateAsync().
     /// (The audit_logs <c>access_logs</c> table is out of scope for the command-bus port.)
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(AuditLogsMigrationsDbContext))]
     [Migration("20260707040000_AddActionLogs")]
     public partial class AddActionLogs : Migration
     {

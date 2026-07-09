@@ -1,10 +1,9 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using OpenMercato.Core.Data;
 
 #nullable disable
 
-namespace OpenMercato.Api.Migrations
+namespace OpenMercato.Modules.Directory.Migrations
 {
     /// <summary>
     /// Byte-exact DDL for the directory tables <c>tenants</c> and <c>organizations</c> (upstream
@@ -13,7 +12,7 @@ namespace OpenMercato.Api.Migrations
     /// precision). parent_id/root_id carry NO DB FK (hierarchy managed in lib/hierarchy.ts). Raw SQL —
     /// the model snapshot is intentionally not updated. Applied at runtime by MigrateAsync().
     /// </summary>
-    [DbContext(typeof(AppDbContext))]
+    [DbContext(typeof(DirectoryMigrationsDbContext))]
     [Migration("20260707020000_AddDirectoryModule")]
     public partial class AddDirectoryModule : Migration
     {

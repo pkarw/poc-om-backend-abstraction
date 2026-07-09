@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using OpenMercato.Api;
+using OpenMercato.Core.Configuration;
 using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
 
@@ -24,14 +27,19 @@ public sealed class GreenfieldCommand : ICliCommand
             return 1;
         }
 
+        var config = services.GetRequiredService<AppConfig>();
+        var logger = services.GetService<ILoggerFactory>()?.CreateLogger("greenfield");
+
         using (var scope = services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Console.WriteLine("Dropping and recreating schema 'public'…");
+            // Dropping public also drops every module's __ef_migrations_* history table, so the
+            // subsequent per-module ApplyAllAsync re-applies all migrations from scratch.
             await db.Database.ExecuteSqlRawAsync("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;");
-            await db.Database.MigrateAsync();
-            Console.WriteLine("Database migrations applied.");
         }
+        await ModuleMigrations.ApplyAllAsync(config.NpgsqlConnectionString, logger);
+        Console.WriteLine("Database migrations applied.");
         return await SeedRunner.RunAsync(services, SeedOptions.Resolve(args));
     }
 }

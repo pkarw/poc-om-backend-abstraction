@@ -2,7 +2,7 @@ namespace OpenMercato.Modules.Currencies.Data;
 
 // Plain POCO entities mirroring upstream packages/core/src/modules/currencies/data/entities.ts.
 // Byte-exact table/column/index/constraint mapping lives in CurrenciesModule.ConfigureModel; the DDL
-// is created by the raw-SQL migration OpenMercato.Api/Migrations/20260707070000_AddCurrenciesModule.
+// is created by the raw-SQL migration the module's Migrations/20260707070000_AddCurrenciesModule.
 // All three tables are org+tenant scoped; currencies/exchange_rates soft-delete via nullable DeletedAt.
 
 /// <summary>Table <c>currencies</c> — ISO 4217 currency reference data (org+tenant scoped).</summary>

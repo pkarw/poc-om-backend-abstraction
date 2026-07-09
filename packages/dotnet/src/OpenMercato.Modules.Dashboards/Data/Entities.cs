@@ -2,7 +2,7 @@ namespace OpenMercato.Modules.Dashboards.Data;
 
 // Plain POCO entities mirroring upstream packages/core/src/modules/dashboards/data/entities.ts.
 // Byte-exact table/column/index/constraint mapping lives in DashboardsModule.ConfigureModel; the
-// DDL is created by the raw-SQL migration OpenMercato.Api/Migrations AddDashboardsModule. All three
+// DDL is created by the raw-SQL migration the module's Migrations/AddDashboardsModule. All three
 // tables soft-delete via nullable DeletedAt; tenant_id/organization_id are bare nullable uuids
 // (tenancy by convention, no cross-module FK). The jsonb columns are stored as raw JSON strings
 // (default '[]') and manipulated with System.Text.Json in the route handlers — see Lib/LayoutJson.

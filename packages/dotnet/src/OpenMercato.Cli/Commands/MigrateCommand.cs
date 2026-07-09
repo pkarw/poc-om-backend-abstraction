@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using OpenMercato.Core.Data;
+using Microsoft.Extensions.Logging;
+using OpenMercato.Api;
+using OpenMercato.Core.Configuration;
 using OpenMercato.Core.Modules;
 
 namespace OpenMercato.Cli.Commands;
@@ -13,9 +14,10 @@ public sealed class MigrateCommand : ICliCommand
 
     public async Task<int> RunAsync(string[] args, IServiceProvider services)
     {
-        using var scope = services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.MigrateAsync();
+        var config = services.GetRequiredService<AppConfig>();
+        var logger = services.GetService<ILoggerFactory>()?.CreateLogger("migrate");
+        // Per-module migrations: each module owns its migrations context + history table.
+        await ModuleMigrations.ApplyAllAsync(config.NpgsqlConnectionString, logger);
         Console.WriteLine("Database migrations applied.");
         return 0;
     }
