@@ -71,11 +71,64 @@ public static class CustomersSeeder
 
     private static DictSeed[] Seeds(params string[] values) => values.Select(v => new DictSeed(v)).ToArray();
 
-    private static readonly (string Company, string Industry, string Lifecycle, (string First, string Last)[] People)[] Examples =
+    /// <summary>An example person (upstream <c>CUSTOMER_EXAMPLES[].people[]</c>). Contact fields are the exact
+    /// OM values: <c>Email</c>/<c>Phone</c> land on the person's <see cref="CustomerEntity"/> (primary_email/
+    /// primary_phone — what the people LIST reads); job/department/seniority/timezone/linkedIn/preferredName land
+    /// on the <see cref="CustomerPersonProfile"/>; <c>Source</c> on the entity.</summary>
+    private readonly record struct PersonSeed(
+        string First, string Last, string? PreferredName, string Email, string Phone,
+        string JobTitle, string Department, string Seniority, string Timezone, string LinkedInUrl, string Source);
+
+    /// <summary>An example company (upstream <c>CUSTOMER_EXAMPLES[]</c>). Contact/identity fields are the exact
+    /// OM values: <c>PrimaryEmail</c>/<c>PrimaryPhone</c>/<c>Source</c>/<c>Description</c> land on the
+    /// <see cref="CustomerEntity"/>; <c>LegalName</c>/<c>Domain</c>/<c>WebsiteUrl</c>/<c>SizeBucket</c>/<c>Industry</c>
+    /// on the <see cref="CustomerCompanyProfile"/>.</summary>
+    private readonly record struct CompanySeed(
+        string Company, string Industry, string Lifecycle, string PrimaryEmail, string PrimaryPhone,
+        string Source, string Description, string LegalName, string Domain, string WebsiteUrl, string SizeBucket,
+        PersonSeed[] People);
+
+    private static readonly CompanySeed[] Examples =
     {
-        ("Brightside Solar", "Renewable Energy", "customer", new[] { ("Mia", "Johnson"), ("Daniel", "Cho") }),
-        ("Harborview Analytics", "Software", "prospect", new[] { ("Arjun", "Patel"), ("Lena", "Ortiz") }),
-        ("Copperleaf Design Co.", "Interior Design", "customer", new[] { ("Taylor", "Brooks"), ("Naomi", "Harris") }),
+        new("Brightside Solar", "Renewable Energy", "customer",
+            "hello@brightsidesolar.com", "+1 415-555-0148", "partner_referral",
+            "Community solar developer helping multifamily buildings reduce energy costs across California.",
+            "Brightside Solar LLC", "brightsidesolar.com", "https://brightsidesolar.com", "51-200",
+            new[]
+            {
+                new PersonSeed("Mia", "Johnson", "Mia", "mia.johnson@brightsidesolar.com", "+1 415-555-0162",
+                    "Director of Operations", "Operations", "director", "America/Los_Angeles",
+                    "https://www.linkedin.com/in/miajohnson-operations/", "partner_referral"),
+                new PersonSeed("Daniel", "Cho", null, "daniel.cho@brightsidesolar.com", "+1 628-555-0199",
+                    "VP of Partnerships", "Business Development", "vp", "America/Los_Angeles",
+                    "https://www.linkedin.com/in/danielcho-energy/", "outbound_campaign"),
+            }),
+        new("Harborview Analytics", "Software", "prospect",
+            "info@harborviewanalytics.com", "+1 617-555-0024", "industry_event",
+            "Boston-based analytics platform helping consumer brands optimize merchandising decisions.",
+            "Harborview Analytics Inc.", "harborviewanalytics.com", "https://harborviewanalytics.com", "201-500",
+            new[]
+            {
+                new PersonSeed("Arjun", "Patel", null, "arjun.patel@harborviewanalytics.com", "+1 617-555-0168",
+                    "Chief Revenue Officer", "Revenue", "c-level", "America/New_York",
+                    "https://www.linkedin.com/in/arjunpatel-sales/", "industry_event"),
+                new PersonSeed("Lena", "Ortiz", null, "lena.ortiz@harborviewanalytics.com", "+1 617-555-0179",
+                    "Director of Retail Partnerships", "Partnerships", "director", "America/New_York",
+                    "https://www.linkedin.com/in/lenaortiz-retail/", "industry_event"),
+            }),
+        new("Copperleaf Design Co.", "Interior Design", "customer",
+            "studio@copperleaf.design", "+1 512-555-0456", "customer_referral",
+            "Boutique interior design studio specializing in hospitality and boutique retail projects across Texas.",
+            "Copperleaf Design Company", "copperleaf.design", "https://copperleaf.design", "11-50",
+            new[]
+            {
+                new PersonSeed("Taylor", "Brooks", null, "taylor.brooks@copperleaf.design", "+1 512-555-0489",
+                    "Founder & Principal", "Leadership", "c-level", "America/Chicago",
+                    "https://www.linkedin.com/in/taylorbrooks-design/", "customer_referral"),
+                new PersonSeed("Naomi", "Harris", null, "naomi.harris@copperleaf.design", "+1 512-555-0521",
+                    "Senior Project Manager", "Projects", "manager", "America/Chicago",
+                    "https://www.linkedin.com/in/naomiharris-pm/", "customer_referral"),
+            }),
     };
 
     /// <summary>The 8 default pipeline stages (upstream <c>PIPELINE_STAGE_DEFAULTS</c>), ordered. Only the
@@ -229,7 +282,8 @@ public static class CustomersSeeder
             {
                 Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId, Kind = "company",
                 DisplayName = ex.Company, LifecycleStage = ex.Lifecycle, Status = "active", IsActive = true,
-                CreatedAt = now, UpdatedAt = now,
+                PrimaryEmail = ex.PrimaryEmail, PrimaryPhone = ex.PrimaryPhone, Source = ex.Source,
+                Description = ex.Description, CreatedAt = now, UpdatedAt = now,
             };
             db.Set<CustomerEntity>().Add(company);
             // Save the base customer_entities row before its satellite profile: ConfigureModel maps
@@ -238,18 +292,22 @@ public static class CustomersSeeder
             db.Set<CustomerCompanyProfile>().Add(new CustomerCompanyProfile
             {
                 Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId, EntityId = company.Id,
-                Industry = ex.Industry, BrandName = ex.Company, CreatedAt = now, UpdatedAt = now,
+                Industry = ex.Industry, BrandName = ex.Company, LegalName = ex.LegalName, Domain = ex.Domain,
+                WebsiteUrl = ex.WebsiteUrl, SizeBucket = ex.SizeBucket, CreatedAt = now, UpdatedAt = now,
             });
             await db.SaveChangesAsync(ct);
             await indexer.UpsertOneAsync(CustomerWriteHelpers.CompanyEntityType, company.Id.ToString(), organizationId, tenantId, "create", ct);
             seeded++;
 
-            foreach (var (first, last) in ex.People)
+            foreach (var p in ex.People)
             {
+                // Person contact lands on the entity (primary_email/primary_phone) — that is what the people
+                // LIST mapApiItem reads; the person profile carries job/department/seniority/timezone/linkedIn.
                 var person = new CustomerEntity
                 {
                     Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId, Kind = "person",
-                    DisplayName = $"{first} {last}", Status = "active", LifecycleStage = ex.Lifecycle, IsActive = true,
+                    DisplayName = $"{p.First} {p.Last}", Status = "active", LifecycleStage = ex.Lifecycle, IsActive = true,
+                    PrimaryEmail = p.Email, PrimaryPhone = p.Phone, Source = p.Source,
                     CreatedAt = now, UpdatedAt = now,
                 };
                 db.Set<CustomerEntity>().Add(person);
@@ -257,7 +315,9 @@ public static class CustomersSeeder
                 db.Set<CustomerPersonProfile>().Add(new CustomerPersonProfile
                 {
                     Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId, EntityId = person.Id,
-                    FirstName = first, LastName = last, CompanyEntityId = company.Id, CreatedAt = now, UpdatedAt = now,
+                    FirstName = p.First, LastName = p.Last, PreferredName = p.PreferredName, JobTitle = p.JobTitle,
+                    Department = p.Department, Seniority = p.Seniority, Timezone = p.Timezone, LinkedInUrl = p.LinkedInUrl,
+                    CompanyEntityId = company.Id, CreatedAt = now, UpdatedAt = now,
                 });
                 db.Set<CustomerPersonCompanyLink>().Add(new CustomerPersonCompanyLink
                 {
