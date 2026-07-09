@@ -82,3 +82,7 @@ org-switcher all pass **through the Caddy proxy**. The one piece you supply is t
   scheme (for the case where OM itself writes the PII) is still a tracked parity item; the email
   **lookup hash** already matches (shared pepper), which is all login needs.
 - Only modules listed in `ported-modules.txt` are served by .NET; the rest are OM's.
+- **Sidebar/nav is OM's.** `GET /api/auth/admin/nav` builds the backend sidebar from OM's
+  frontend page registry (its React `page.meta` files), which the API-only .NET port can't
+  know — so the proxy keeps that one path on OM even though `auth` is ported (see the
+  exception in `Caddyfile` / `gen-proxy.sh`). Without it the sidebar renders no module items.

@@ -17,6 +17,14 @@ paths="${paths# }"
 
 block=$(cat <<EOF
 	# --- BEGIN generated ported-module routes (./gen-proxy.sh) ---
+	# Frontend-chrome exception: the backend sidebar/nav is built from OM's frontend page
+	# registry (its React \`page.meta\` files), which the API-only .NET port cannot know — its
+	# /api/auth/admin/nav returns empty \`groups\`, so the sidebar would show no module items.
+	# Keep it on OM even though \`auth\` is ported. Must precede @ported (first match wins).
+	@om_frontend path /api/auth/admin/nav
+	handle @om_frontend {
+		reverse_proxy om-app:3000
+	}
 	@ported path $paths
 	handle @ported {
 		reverse_proxy dotnet-api:8080
