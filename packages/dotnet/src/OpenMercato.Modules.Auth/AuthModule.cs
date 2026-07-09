@@ -97,6 +97,32 @@ public sealed class AuthModule : IModule
             ["admin"] = new[] { "auth.*" },
         };
 
+    /// <summary>
+    /// Default field-encryption maps (upstream auth <c>encryption.ts</c> defaultEncryptionMaps):
+    /// user.email (+ email_hash lookup) and user.name; user_consent.ip_address and user_consent.source.
+    /// Seeded per tenant/org by the initial-tenant seeder; drive the SaveChanges encryption interceptor.
+    /// </summary>
+    public IReadOnlyList<ModuleEncryptionMap> DefaultEncryptionMaps { get; } = new[]
+    {
+        new ModuleEncryptionMap("auth:user", new[]
+        {
+            new EncryptedFieldRule("email", "email_hash"),
+            new EncryptedFieldRule("name"),
+        }),
+        new ModuleEncryptionMap("auth:user_consent", new[]
+        {
+            new EncryptedFieldRule("ip_address"),
+            new EncryptedFieldRule("source"),
+        }),
+    };
+
+    /// <summary>CLR entity types encrypted at rest, mapped to their upstream entity_id.</summary>
+    public IReadOnlyDictionary<Type, string> EncryptedEntityTypes { get; } = new Dictionary<Type, string>
+    {
+        [typeof(User)] = "auth:user",
+        [typeof(UserConsent)] = "auth:user_consent",
+    };
+
     /// <summary>CLI subcommands (upstream auth cli.ts): add-user, set-password, list-users.</summary>
     public IReadOnlyList<ICliCommand> CliCommands { get; } = new ICliCommand[]
     {
@@ -112,6 +138,12 @@ public sealed class AuthModule : IModule
         services.AddSingleton<TokenHasher>();
         services.AddSingleton<JwtService>();
         services.AddSingleton<EncryptionService>();
+
+        // Per-tenant-DEK field encryption (upstream KMS + TenantDataEncryptionService + onFlush
+        // subscriber). The interceptor is added onto AppDbContext's options in each host's Program.cs.
+        services.AddSingleton<DerivedKmsService>();
+        services.AddSingleton<TenantDataEncryptionService>();
+        services.AddSingleton<TenantEncryptionInterceptor>();
 
         // Domain services provided by the domain slices.
         services.AddScoped<IRbacService, OpenMercato.Modules.Auth.Services.RbacService>();

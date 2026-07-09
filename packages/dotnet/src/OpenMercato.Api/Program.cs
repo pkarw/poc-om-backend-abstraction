@@ -21,13 +21,15 @@ builder.Services.AddSingleton(registry);
 // PORT-TODO: delivery/EAV-storage engines arrive with the notifications/entities module ports.
 builder.Services.AddSingleton<OpenMercato.Core.Modules.INotificationCatalog, OpenMercato.Core.Modules.NotificationCatalog>();
 builder.Services.AddSingleton<OpenMercato.Core.Modules.ICustomFieldRegistry, OpenMercato.Core.Modules.CustomFieldRegistry>();
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     // AppDbContext is the runtime QUERY context only; it no longer owns migrations. Each module
     // applies its own raw-SQL migrations through ModuleMigrations.ApplyAllAsync (per-module context +
     // history table). The model snapshot intentionally does not describe module tables, so ignore the
     // resulting drift warning (relevant only if this context were ever migrated/EnsureCreated'd).
     options
         .UseNpgsql(config.NpgsqlConnectionString)
+        // Per-tenant-DEK field encryption on write (no-op when no encryption map applies).
+        .AddInterceptors(sp.GetRequiredService<OpenMercato.Modules.Auth.Security.TenantEncryptionInterceptor>())
         .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(ConnectionStrings.FromRedisUrl(config.RedisUrl)));

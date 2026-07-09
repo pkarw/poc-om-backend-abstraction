@@ -30,7 +30,7 @@ public sealed class SessionRefreshRoutes : IAuthRouteGroup
 
     private static async Task<IResult> Get(
         HttpContext http, AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
-        EncryptionService enc, JwtService jwt, CancellationToken ct)
+        EncryptionService enc, TenantDataEncryptionService tenc, JwtService jwt, CancellationToken ct)
     {
         var redirectTo = AuthHttp.SanitizeRedirectPath(
             http.Request.Query["redirect"], AuthHttp.AppBaseUrl(http), "/");
@@ -40,7 +40,7 @@ public sealed class SessionRefreshRoutes : IAuthRouteGroup
         if (token is null)
             return RedirectToLogin(http, origin, redirectTo);
 
-        var auth = new AuthService(db, passwords, tokens, enc);
+        var auth = new AuthService(db, passwords, tokens, enc, tenc);
         var ctx = await auth.RefreshFromSessionTokenAsync(token, ct);
         if (ctx is null)
             return RedirectToLogin(http, origin, redirectTo);
@@ -61,7 +61,7 @@ public sealed class SessionRefreshRoutes : IAuthRouteGroup
 
     private static async Task<IResult> Post(
         HttpContext http, AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
-        EncryptionService enc, JwtService jwt, CancellationToken ct)
+        EncryptionService enc, TenantDataEncryptionService tenc, JwtService jwt, CancellationToken ct)
     {
         string? token = null;
         try
@@ -89,7 +89,7 @@ public sealed class SessionRefreshRoutes : IAuthRouteGroup
             return Results.Json(new { ok = false, error = "Missing or invalid refresh token" }, statusCode: 400);
         }
 
-        var auth = new AuthService(db, passwords, tokens, enc);
+        var auth = new AuthService(db, passwords, tokens, enc, tenc);
         var ctx = await auth.RefreshFromSessionTokenAsync(token, ct);
         if (ctx is null)
         {

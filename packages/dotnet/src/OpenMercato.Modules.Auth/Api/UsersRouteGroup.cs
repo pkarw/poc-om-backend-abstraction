@@ -33,11 +33,11 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
 
     public void Map(IEndpointRouteBuilder routes)
     {
-        routes.MapGet("/api/auth/users", async (HttpContext http, AppDbContext db, IRbacService rbac, EncryptionService enc) =>
+        routes.MapGet("/api/auth/users", async (HttpContext http, AppDbContext db, IRbacService rbac, TenantDataEncryptionService tenc) =>
         {
             var auth = HttpContextAuth.Current(http);
             var query = TryParseQuery(http.Request.Query, out var q) ? q : null;
-            var result = await ListAsync(db, rbac, enc, auth, query);
+            var result = await ListAsync(db, rbac, tenc, auth, query);
             return Results.Json(result);
         }).RequireFeatures("auth.users.list");
 
@@ -49,7 +49,7 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
     // ---- GET (hand-written; empty-envelope quirk) ---------------------------------------------
 
     public static async Task<object> ListAsync(
-        AppDbContext db, IRbacService rbac, EncryptionService enc, AuthContext? auth, UsersQuery? query)
+        AppDbContext db, IRbacService rbac, TenantDataEncryptionService tenc, AuthContext? auth, UsersQuery? query)
     {
         if (auth is null || query is null)
             return new { items = Array.Empty<object>(), total = 0, totalPages = 1 };
@@ -123,6 +123,9 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
         var page = await rows.OrderBy(u => u.Id)
             .Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToListAsync();
 
+        // Decrypt each row's email/name with its own tenant DEK (no-op when plaintext / no map).
+        foreach (var u in page) tenc.DecryptUserInPlace(db, u);
+
         var userIds = page.Select(u => u.Id).ToList();
         var links = userIds.Count == 0
             ? new List<LinkRow>()
@@ -148,8 +151,8 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
             var item = new Dictionary<string, object?>
             {
                 ["id"] = u.Id.ToString(),
-                ["email"] = enc.Decrypt(u.Email) ?? u.Email,
-                ["name"] = u.Name is null ? null : enc.Decrypt(u.Name),
+                ["email"] = u.Email,
+                ["name"] = u.Name,
                 ["organizationId"] = u.OrganizationId?.ToString(),
                 ["organizationName"] = u.OrganizationId?.ToString(),
                 ["tenantId"] = u.TenantId?.ToString(),
@@ -230,9 +233,10 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
             var user = new User
             {
                 Id = Guid.NewGuid(),
-                Email = enc.Encrypt(email) ?? email,
+                // Write PLAINTEXT — the SaveChanges interceptor encrypts email/name with the tenant DEK.
+                Email = email,
                 EmailHash = enc.ComputeEmailHash(email),
-                Name = name is null ? null : enc.Encrypt(name),
+                Name = name,
                 PasswordHash = string.IsNullOrEmpty(password) ? null : hasher.Hash(password),
                 IsConfirmed = true,
                 OrganizationId = organizationId,
@@ -300,7 +304,8 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
                 var dup = await db.Set<User>().AsNoTracking().AnyAsync(u =>
                     u.EmailHash != null && lookup.Contains(u.EmailHash) && u.TenantId == user.TenantId && u.Id != id && u.DeletedAt == null);
                 if (dup) return DuplicateEmail();
-                user.Email = enc.Encrypt(email) ?? email;
+                // Write PLAINTEXT — the SaveChanges interceptor re-encrypts with the tenant DEK on save.
+                user.Email = email;
                 user.EmailHash = enc.ComputeEmailHash(email);
             }
 
@@ -308,7 +313,7 @@ public sealed class UsersRouteGroup : IAuthRouteGroup
             {
                 if (!TryReadName(body, out var name, out var nameError))
                     return Results.Json(new { error = nameError }, statusCode: 400);
-                user.Name = name is null ? null : enc.Encrypt(name);
+                user.Name = name;
             }
             if (body.TryGetString("organizationId", out var orgStr))
             {

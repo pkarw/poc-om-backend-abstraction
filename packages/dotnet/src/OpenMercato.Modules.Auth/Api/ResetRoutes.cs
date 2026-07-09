@@ -35,7 +35,7 @@ public sealed class ResetRoutes : IAuthRouteGroup
 
     private static async Task<IResult> Request(
         HttpContext http, AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
-        EncryptionService enc, CancellationToken ct)
+        EncryptionService enc, TenantDataEncryptionService tenc, CancellationToken ct)
     {
         var email = (await ReadFormValue(http, "email")).Trim();
 
@@ -45,14 +45,14 @@ public sealed class ResetRoutes : IAuthRouteGroup
         if (!IsEmail(email))
             return Results.Json(new { error = "Validation failed", fieldErrors = new { email = new[] { "Invalid email" } } }, statusCode: 422);
 
-        var auth = new AuthService(db, passwords, tokens, enc);
+        var auth = new AuthService(db, passwords, tokens, enc, tenc);
         await auth.RequestPasswordResetAsync(email, ct); // token row created for known users
         return Results.Json(new { ok = true });
     }
 
     private static async Task<IResult> Confirm(
         HttpContext http, AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
-        EncryptionService enc, CancellationToken ct)
+        EncryptionService enc, TenantDataEncryptionService tenc, CancellationToken ct)
     {
         var form = await ReadForm(http);
         var token = form.TryGetValue("token", out var t) ? t : string.Empty;
@@ -65,7 +65,7 @@ public sealed class ResetRoutes : IAuthRouteGroup
         if (token.Length < 10 || !PasswordPolicy.IsValid(password))
             return Results.Json(new { ok = false, error = "Invalid request" }, statusCode: 400);
 
-        var auth = new AuthService(db, passwords, tokens, enc);
+        var auth = new AuthService(db, passwords, tokens, enc, tenc);
         var user = await auth.ConfirmPasswordResetAsync(token, password, ct);
         if (user is null)
             return Results.Json(new { ok = false, error = "Invalid or expired token" }, statusCode: 400);

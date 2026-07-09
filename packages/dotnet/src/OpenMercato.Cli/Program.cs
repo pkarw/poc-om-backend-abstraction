@@ -31,8 +31,10 @@ services.AddSingleton<INotificationCatalog, NotificationCatalog>();
 services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
 // AppDbContext is the query context only; migrations are applied per-module via
 // ModuleMigrations.ApplyAllAsync (see the migrate/greenfield commands).
-services.AddDbContext<AppDbContext>(options => options
+services.AddDbContext<AppDbContext>((sp, options) => options
     .UseNpgsql(config.NpgsqlConnectionString)
+    // Per-tenant-DEK field encryption on write (no-op when no encryption map applies).
+    .AddInterceptors(sp.GetRequiredService<OpenMercato.Modules.Auth.Security.TenantEncryptionInterceptor>())
     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 // Redis is optional for the CLI: the multiplexer is only constructed if a command resolves it, and
 // AbortOnConnectFail=false means even then it never blocks when Redis is down.

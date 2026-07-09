@@ -26,13 +26,16 @@ public sealed class AuthService
     private readonly PasswordHasher _passwords;
     private readonly TokenHasher _tokens;
     private readonly EncryptionService _encryption;
+    private readonly TenantDataEncryptionService _tenantEncryption;
 
-    public AuthService(AppDbContext db, PasswordHasher passwords, TokenHasher tokens, EncryptionService encryption)
+    public AuthService(AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
+        EncryptionService encryption, TenantDataEncryptionService tenantEncryption)
     {
         _db = db;
         _passwords = passwords;
         _tokens = tokens;
         _encryption = encryption;
+        _tenantEncryption = tenantEncryption;
     }
 
     /// <summary>Single user matched by email (any tenant), or null. Email is decrypted in-place.</summary>
@@ -187,11 +190,14 @@ public sealed class AuthService
         return user;
     }
 
-    /// <summary>Decrypt the stored email ciphertext in-place; falls back to the raw value if not decryptable.</summary>
+    /// <summary>
+    /// Decrypt the stored email (and name) in-place using the per-tenant DEK. No-op when the value is
+    /// plaintext or no encryption map applies (e.g. InMemory tests).
+    /// </summary>
     private User? Decrypt(User? user)
     {
         if (user is null) return null;
-        user.Email = _encryption.Decrypt(user.Email) ?? user.Email;
+        _tenantEncryption.DecryptUserInPlace(_db, user);
         return user;
     }
 }

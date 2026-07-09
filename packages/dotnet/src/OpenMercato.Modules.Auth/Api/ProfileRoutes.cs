@@ -29,7 +29,7 @@ public sealed class ProfileRoutes : IAuthRouteGroup
         routes.MapPut("/api/auth/profile", Put).RequireAuth();
     }
 
-    private static async Task<IResult> Get(HttpContext http, AppDbContext db, EncryptionService enc, CancellationToken ct)
+    private static async Task<IResult> Get(HttpContext http, AppDbContext db, TenantDataEncryptionService tenc, CancellationToken ct)
     {
         var auth = HttpContextAuth.Current(http)!;
         try
@@ -38,7 +38,8 @@ public sealed class ProfileRoutes : IAuthRouteGroup
                 .FirstOrDefaultAsync(u => u.Id == auth.UserId && u.DeletedAt == null, ct);
             if (user is null)
                 return Results.Json(new { error = "User not found" }, statusCode: 404);
-            var email = enc.Decrypt(user.Email) ?? user.Email;
+            tenc.DecryptUserInPlace(db, user); // AsNoTracking — safe to mutate, never persisted
+            var email = user.Email;
             return Results.Json(new { email, roles = auth.Roles });
         }
         catch
@@ -49,7 +50,7 @@ public sealed class ProfileRoutes : IAuthRouteGroup
 
     private static async Task<IResult> Put(
         HttpContext http, AppDbContext db, PasswordHasher passwords, TokenHasher tokens,
-        EncryptionService enc, JwtService jwt, CancellationToken ct)
+        EncryptionService enc, TenantDataEncryptionService tenc, JwtService jwt, CancellationToken ct)
     {
         var auth = HttpContextAuth.Current(http)!;
         try
@@ -107,13 +108,17 @@ public sealed class ProfileRoutes : IAuthRouteGroup
             string newEmailPlain;
             if (effectiveEmail is not null)
             {
-                user.Email = enc.Encrypt(effectiveEmail)!;
+                // Write PLAINTEXT — the SaveChanges interceptor encrypts email/name with the tenant DEK.
+                user.Email = effectiveEmail;
                 user.EmailHash = enc.ComputeEmailHash(effectiveEmail);
                 newEmailPlain = effectiveEmail;
             }
             else
             {
-                newEmailPlain = enc.Decrypt(user.Email) ?? user.Email;
+                // Email unchanged: decrypt the stored value for the re-signed JWT without mutating the row.
+                var dec = tenc.DecryptEntityPayload(db, "auth:user", user.TenantId, user.OrganizationId,
+                    new Dictionary<string, object?> { ["Email"] = user.Email });
+                newEmailPlain = dec["Email"] as string ?? user.Email;
             }
             if (effectivePassword is not null)
                 user.PasswordHash = passwords.Hash(effectivePassword);
@@ -121,7 +126,7 @@ public sealed class ProfileRoutes : IAuthRouteGroup
 
             await db.SaveChangesAsync(ct);
 
-            var svc = new AuthService(db, passwords, tokens, enc);
+            var svc = new AuthService(db, passwords, tokens, enc, tenc);
             var roles = await svc.GetUserRolesAsync(user, user.TenantId, ct);
             var newJwt = jwt.Sign(new StaffJwtClaims
             {

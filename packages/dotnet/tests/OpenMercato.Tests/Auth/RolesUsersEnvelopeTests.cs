@@ -10,8 +10,8 @@ namespace OpenMercato.Tests.Auth;
 
 public class RolesUsersEnvelopeTests
 {
-    private static readonly EncryptionService Enc =
-        new(new AppConfig("db", "redis", "local", "redis", "test-secret", 0));
+    private static readonly TenantDataEncryptionService Enc =
+        new(new DerivedKmsService("test-secret"));
 
     private static string Json(object value) => JsonSerializer.Serialize(value);
 

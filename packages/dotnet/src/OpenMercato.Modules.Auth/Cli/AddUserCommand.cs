@@ -65,7 +65,8 @@ public sealed class AddUserCommand : ICliCommand
             Id = Guid.NewGuid(),
             TenantId = tenantId,
             OrganizationId = organizationId,
-            Email = encryption.Encrypt(email)!,
+            // Write PLAINTEXT — the SaveChanges interceptor encrypts email/name with the tenant DEK.
+            Email = email,
             EmailHash = encryption.ComputeEmailHash(email),
             PasswordHash = hasher.Hash(password),
             IsConfirmed = true,

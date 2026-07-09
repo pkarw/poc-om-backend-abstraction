@@ -94,6 +94,46 @@ public sealed class ModuleRegistry
         }
     }
 
+    /// <summary>
+    /// Default encryption maps aggregated across every module (upstream
+    /// <c>getDefaultEncryptionMaps</c>). Deduped by <see cref="ModuleEncryptionMap.EntityId"/>
+    /// (first module wins), guarding against a duplicate entity id declaration.
+    /// </summary>
+    public IReadOnlyList<ModuleEncryptionMap> MergedDefaultEncryptionMaps
+    {
+        get
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<ModuleEncryptionMap>();
+            foreach (var module in Modules)
+                foreach (var map in module.DefaultEncryptionMaps)
+                    if (seen.Add(map.EntityId))
+                        result.Add(map);
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// CLR entity type → upstream <c>entity_id</c> map aggregated across every module. Consumed by
+    /// the SaveChanges encryption interceptor. Throws on a duplicate CLR type across modules.
+    /// </summary>
+    public IReadOnlyDictionary<Type, string> EncryptedEntityTypeMap
+    {
+        get
+        {
+            var map = new Dictionary<Type, string>();
+            foreach (var module in Modules)
+                foreach (var (type, entityId) in module.EncryptedEntityTypes)
+                {
+                    if (map.ContainsKey(type))
+                        throw new InvalidOperationException(
+                            $"Duplicate encrypted entity type declared: '{type.FullName}' (module '{module.Id}').");
+                    map[type] = entityId;
+                }
+            return map;
+        }
+    }
+
     private List<T> FlattenUnique<T>(
         Func<IModule, IEnumerable<T>> select,
         Func<T, string> keyOf,

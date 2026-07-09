@@ -64,7 +64,7 @@ public sealed class InitialTenantSeederTests
         // 3 users, emails decrypt back to the Acme identities, all confirmed with bcrypt hashes.
         var users = await db.Set<User>().ToListAsync();
         Assert.Equal(3, users.Count);
-        var emails = users.Select(u => encryption.Decrypt(u.Email)).OrderBy(e => e).ToArray();
+        var emails = users.Select(u => u.Email).OrderBy(e => e).ToArray();
         Assert.Equal(new[] { "admin@acme.com", "employee@acme.com", "superadmin@acme.com" }, emails);
         Assert.All(users, u =>
         {
@@ -75,13 +75,13 @@ public sealed class InitialTenantSeederTests
         });
 
         // Password 'secret' verifies against the superadmin hash.
-        var superUser = users.Single(u => encryption.Decrypt(u.Email) == "superadmin@acme.com");
+        var superUser = users.Single(u => u.Email == "superadmin@acme.com");
         Assert.True(hasher.Verify(superUser.PasswordHash, "secret"));
 
         // Role links: each user has exactly its own role.
         async Task<string> RoleOf(string email)
         {
-            var user = users.Single(u => encryption.Decrypt(u.Email) == email);
+            var user = users.Single(u => u.Email == email);
             var roleId = (await db.Set<UserRole>().Where(ur => ur.UserId == user.Id).ToListAsync()).Single().RoleId;
             return roles.Single(r => r.Id == roleId).Name;
         }
@@ -148,7 +148,7 @@ public sealed class InitialTenantSeederTests
                 new SetupInitialTenantOptions { Email = "root@corp.test", OrgSlug = null });
 
             var users = await db.Set<User>().ToListAsync();
-            var emails = users.Select(u => encryption.Decrypt(u.Email)).OrderBy(e => e).ToArray();
+            var emails = users.Select(u => u.Email).OrderBy(e => e).ToArray();
             Assert.Contains("boss@corp.test", emails);
             Assert.Contains("root@corp.test", emails);
             Assert.Contains("employee@corp.test", emails); // derived from primary email domain

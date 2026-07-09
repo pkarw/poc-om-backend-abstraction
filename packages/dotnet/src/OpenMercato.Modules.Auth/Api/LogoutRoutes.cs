@@ -25,13 +25,14 @@ public sealed class LogoutRoutes : IAuthRouteGroup
         PasswordHasher passwords,
         TokenHasher tokens,
         EncryptionService enc,
+        TenantDataEncryptionService tenc,
         CancellationToken ct)
     {
         var sessionToken = AuthHttp.Cookie(http, "session_token");
         var sid = HttpContextAuth.Current(http)?.Sid;
         try
         {
-            var auth = new AuthService(db, passwords, tokens, enc);
+            var auth = new AuthService(db, passwords, tokens, enc, tenc);
             if (sid is Guid s) await auth.DeleteSessionByIdAsync(s, ct);
             if (sessionToken is not null) await auth.DeleteSessionByTokenAsync(sessionToken, ct);
         }

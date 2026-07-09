@@ -34,6 +34,7 @@ public sealed class LoginRoutes : IAuthRouteGroup
         PasswordHasher passwords,
         TokenHasher tokens,
         EncryptionService enc,
+        TenantDataEncryptionService tenc,
         JwtService jwt,
         IEventBus events,
         CancellationToken ct)
@@ -64,7 +65,7 @@ public sealed class LoginRoutes : IAuthRouteGroup
         if (!IsEmail(email) || password.Length < 6)
             return Results.Json(new { ok = false, error = "Invalid credentials" }, statusCode: 400);
 
-        var auth = new AuthService(db, passwords, tokens, enc);
+        var auth = new AuthService(db, passwords, tokens, enc, tenc);
 
         User? user;
         if (tenantId is Guid tid)

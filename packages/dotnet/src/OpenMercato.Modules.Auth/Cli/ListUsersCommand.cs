@@ -25,7 +25,7 @@ public sealed class ListUsersCommand : ICliCommand
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var encryption = scope.ServiceProvider.GetRequiredService<EncryptionService>();
+        var tenc = scope.ServiceProvider.GetRequiredService<TenantDataEncryptionService>();
 
         var query = db.Set<User>().AsNoTracking().AsQueryable();
         if (parsed.Get("organizationId", "orgId", "org") is { } orgRaw && Guid.TryParse(orgRaw, out var orgId))
@@ -56,8 +56,9 @@ public sealed class ListUsersCommand : ICliCommand
                                    where ur.UserId == user.Id
                                    select r.Name).ToListAsync();
             var roles = roleNames.Count > 0 ? string.Join(", ", roleNames) : "None";
-            var email = encryption.Decrypt(user.Email) ?? user.Email;
-            var name = (user.Name is null ? null : encryption.Decrypt(user.Name)) ?? user.Name ?? "Unnamed";
+            tenc.DecryptUserInPlace(db, user); // AsNoTracking — safe to mutate for display
+            var email = user.Email;
+            var name = user.Name ?? "Unnamed";
             var org = user.OrganizationId is { } oid && orgNames.TryGetValue(oid, out var on) ? on : (user.OrganizationId?.ToString() ?? "N/A");
             var tenant = user.TenantId is { } tid && tenantNames.TryGetValue(tid, out var tn) ? tn : (user.TenantId?.ToString() ?? "N/A");
 

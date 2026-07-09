@@ -75,6 +75,24 @@ public interface IModule
     IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultRoleFeatures =>
         new Dictionary<string, IReadOnlyList<string>>();
 
+    /// <summary>
+    /// Per-entity field-encryption maps the module declares (upstream per-module <c>encryption.ts</c>
+    /// <c>defaultEncryptionMaps</c>). Seeded into <c>encryption_maps</c> on a fresh tenant so the
+    /// per-tenant-DEK field encryption knows which fields to encrypt/hash. Empty by default.
+    /// PARITY-TODO (stage 2): the customers module declares its 7-entity maps here.
+    /// </summary>
+    IReadOnlyList<ModuleEncryptionMap> DefaultEncryptionMaps =>
+        Array.Empty<ModuleEncryptionMap>();
+
+    /// <summary>
+    /// Maps a module's CLR entity types to their upstream <c>entity_id</c> (e.g.
+    /// <c>typeof(User)</c> → <c>"auth:user"</c>). Drives the SaveChanges encryption interceptor:
+    /// entries whose CLR type is registered here are run through the tenant-DEK encryption on write.
+    /// Empty by default; extensible per module without any cross-module compile dependency.
+    /// </summary>
+    IReadOnlyDictionary<Type, string> EncryptedEntityTypes =>
+        new Dictionary<Type, string>();
+
     // --- Per-module setup / seeding (upstream setup.ts ModuleSetupConfig) --------------
     // The host orchestrator (ModuleSeedRunner) calls these per (tenant, organization) scope, for
     // every module in registration (= dependency) order — exactly like `mercato init`'s module loops.

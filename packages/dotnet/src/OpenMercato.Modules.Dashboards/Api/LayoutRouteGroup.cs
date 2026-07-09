@@ -29,7 +29,7 @@ public sealed class LayoutRouteGroup : IDashboardRouteGroup
         routes.MapPut("/api/dashboards/layout", PutAsync).RequireFeatures("dashboards.configure");
     }
 
-    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db, IRbacService rbac, EncryptionService encryption)
+    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db, IRbacService rbac, TenantDataEncryptionService encryption)
     {
         var auth = HttpContextAuth.Current(http)!;
         var userId = auth.UserId;
@@ -115,8 +115,9 @@ public sealed class LayoutRouteGroup : IDashboardRouteGroup
             .FirstOrDefaultAsync(u => u.Id == userId && u.DeletedAt == null);
         if (user is not null)
         {
-            userName = encryption.Decrypt(user.Name)?.Trim();
-            userEmail = encryption.Decrypt(user.Email);
+            encryption.DecryptUserInPlace(db, user); // AsNoTracking — safe to mutate for display
+            userName = user.Name?.Trim();
+            userEmail = user.Email;
             userLabel = !string.IsNullOrEmpty(userName) ? userName : userEmail;
         }
         userLabel ??= userId.ToString();

@@ -131,6 +131,13 @@ public static class InitialTenantSeeder
         // 2) Roles for the tenant.
         await EnsureRolesAsync(db, roleNames, tenant.Id, ct);
 
+        // 2b) Field encryption: provision the tenant DEK (deterministic — no-op for parity) and seed the
+        // default encryption_maps for this (tenant, org) BEFORE any users are written, so the SaveChanges
+        // interceptor encrypts email/name on insert. Fail-soft: skipped on providers that can't run raw
+        // SQL (e.g. the EF InMemory provider used by tests) — users then persist as plaintext.
+        ProvisionTenantDek(tenant.Id);
+        await SeedEncryptionMapsAsync(db, registry, tenant.Id, organization.Id, now, ct);
+
         // 3) Users (primary superadmin + derived admin/employee), deduped by lowercase email.
         var domain = ExtractDomain(primaryEmail);
         var adminEmail = ReadEnv("OM_INIT_ADMIN_EMAIL") ?? $"admin@{domain}";
@@ -151,7 +158,10 @@ public static class InitialTenantSeeder
                 Id = Guid.NewGuid(),
                 TenantId = tenant.Id,
                 OrganizationId = organization.Id,
-                Email = encryption.Encrypt(spec.Email)!,
+                // Write PLAINTEXT: the SaveChanges encryption interceptor encrypts email/name with the
+                // tenant DEK on insert (no-op when no map, e.g. InMemory tests). email_hash stays the
+                // canonical plain SHA-256 lookup value the interceptor would also compute.
+                Email = spec.Email,
                 EmailHash = encryption.ComputeEmailHash(spec.Email),
                 PasswordHash = hasher.Hash(spec.Password),
                 IsConfirmed = true,
@@ -220,6 +230,78 @@ public static class InitialTenantSeeder
         logger.LogInformation(
             "Init seed: tenant {TenantId}, organization {OrgId}, {UserCount} users, roles [{Roles}].",
             result.TenantId, result.OrganizationId, result.Users.Count, string.Join(",", DefaultRoleNames));
+    }
+
+    // --- field-encryption provisioning (upstream setup-app.ts DEK + encryption_maps seeding) -------
+
+    /// <summary>Provision the tenant DEK. DerivedKms is deterministic so this is a no-op for parity.</summary>
+    private static void ProvisionTenantDek(Guid tenantId)
+    {
+        try { _ = new DerivedKmsService().DeriveKey(tenantId.ToString()); }
+        catch { /* best-effort parity call; never fatal */ }
+    }
+
+    /// <summary>
+    /// Upsert each module's default encryption map at (entityId, tenant, org) scope via raw SQL.
+    /// Fail-soft: any provider that can't run raw SQL (InMemory) or DB error is swallowed so seeding
+    /// still succeeds (encryption simply stays off in that environment).
+    /// </summary>
+    private static async Task SeedEncryptionMapsAsync(
+        AppDbContext db, ModuleRegistry registry, Guid tenantId, Guid organizationId, DateTimeOffset now, CancellationToken ct)
+    {
+        var maps = registry.MergedDefaultEncryptionMaps;
+        if (maps.Count == 0) return;
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            var wasClosed = conn.State == System.Data.ConnectionState.Closed;
+            if (wasClosed) await conn.OpenAsync(ct);
+            try
+            {
+                foreach (var map in maps)
+                {
+                    var fieldsJson = SerializeFields(map.Fields);
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+UPDATE encryption_maps SET fields_json = @fields::jsonb, is_active = true, deleted_at = null, updated_at = @now
+  WHERE entity_id = @entity AND tenant_id = @tenant AND organization_id = @org;
+INSERT INTO encryption_maps (entity_id, tenant_id, organization_id, fields_json, is_active, created_at, updated_at)
+  SELECT @entity, @tenant, @org, @fields::jsonb, true, @now, @now
+  WHERE NOT EXISTS (
+    SELECT 1 FROM encryption_maps WHERE entity_id = @entity AND tenant_id = @tenant AND organization_id = @org);";
+                    AddParam(cmd, "@entity", map.EntityId);
+                    AddParam(cmd, "@tenant", tenantId);
+                    AddParam(cmd, "@org", organizationId);
+                    AddParam(cmd, "@fields", fieldsJson);
+                    AddParam(cmd, "@now", now.UtcDateTime);
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+            finally
+            {
+                if (wasClosed) await conn.CloseAsync();
+            }
+        }
+        catch
+        {
+            // Non-relational provider or DB hiccup — seeding proceeds without maps (fail-soft).
+        }
+    }
+
+    private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
+    {
+        var p = cmd.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value;
+        cmd.Parameters.Add(p);
+    }
+
+    private static string SerializeFields(IReadOnlyList<OpenMercato.Core.Modules.EncryptedFieldRule> fields)
+    {
+        var projected = fields.Select(f => f.HashField is null
+            ? (object)new { field = f.Field }
+            : new { field = f.Field, hashField = f.HashField });
+        return System.Text.Json.JsonSerializer.Serialize(projected);
     }
 
     // --- role / ACL helpers (ports of ensureRoles / ensureDefaultRoleAcls / ensureRoleAclFor) ------

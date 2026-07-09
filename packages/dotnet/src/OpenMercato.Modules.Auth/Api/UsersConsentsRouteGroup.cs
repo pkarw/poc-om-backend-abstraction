@@ -22,7 +22,7 @@ public sealed class UsersConsentsRouteGroup : IAuthRouteGroup
         routes.MapGet("/api/auth/users/consents", GetAsync).RequireFeatures("auth.users.edit");
     }
 
-    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db, IRbacService rbac, EncryptionService enc)
+    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db, IRbacService rbac, TenantDataEncryptionService tenc)
     {
         var auth = HttpContextAuth.Current(http)!;
         if (!QueryParse.OptionalGuid(http.Request.Query["userId"], out var userIdOpt) || userIdOpt is null)
@@ -47,8 +47,10 @@ public sealed class UsersConsentsRouteGroup : IAuthRouteGroup
 
         var items = consents.Select(c =>
         {
-            var source = enc.Decrypt(c.Source);
-            var ip = enc.Decrypt(c.IpAddress);
+            var dec = tenc.DecryptEntityPayload(db, "auth:user_consent", c.TenantId, c.OrganizationId,
+                new Dictionary<string, object?> { ["Source"] = c.Source, ["IpAddress"] = c.IpAddress });
+            var source = dec["Source"] as string;
+            var ip = dec["IpAddress"] as string;
             return (object)new
             {
                 id = c.Id.ToString(),
