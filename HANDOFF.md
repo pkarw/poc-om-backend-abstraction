@@ -26,7 +26,8 @@ Make the .NET port's customers experience work 1:1 with Open Mercato in the test
 | E | CrudFactory-style route layer | MOSTLY EXISTS | .NET **already has** `CrudRoute`+`CrudConfig` (port of OM `makeCrudRoute`), used by People/Companies/Deals/Comments/Tags/Addresses/Currencies. Remaining: unify per-module HTTP helpers (`CustomersHttp`/`EntitiesHttp`/… duplicate the factory's private auth/body) into a public `CrudHttp`; add nested-resource support; close PARITY-TODO seams (exports, list cache, mutation guards, enrichers, access logging, rate limit — `CrudRoute.cs:31-33`); migrate remaining CRUD-shaped hand-rolled routes. Not a from-scratch build. |
 
 ### Known data-completeness gaps (surfaced by Playwright, for "all data displayed")
-- Seeder sets displayName/industry/lifecycle but NOT primary_email/primary_phone/source/addresses → list Email/Source/Next-interaction columns show "Not set". OM examples have these — enrich `CustomersSeeder.SeedExamplesAsync` (still PARITY-TODO for activities/interactions/notes/addresses/cf-values too).
+- **DONE (commit)**: seeder now sets real primary_email/primary_phone/source + profile job_title/domain/size/etc. from OM CUSTOMER_EXAMPLES → list Email/Source columns populated (verified). Requires a fresh DB (`down -v`) since seed is idempotent (no backfill).
+- Still PARITY-TODO in the seeder: example activities/interactions/notes/addresses and custom-field VALUES (need the entities cf codec) — the Deals/Activities tabs and cf columns stay empty until then.
 - List custom-field columns render blank until C makes list cf keys `cf_`-prefixed (OM `mapApiItem` collects `cf_*`).
 
 ## Analysis (from subagents — full plans)
