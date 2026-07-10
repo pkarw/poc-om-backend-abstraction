@@ -75,6 +75,11 @@ public sealed class QueryIndexCrudIndexer : ICrudIndexer
                 existing.DeletedAt = null;
             }
             await _db.SaveChangesAsync(ct);
+
+            // Write side of the tokenized search index (search-tokens.ts::replaceSearchTokensForRecord).
+            // Best-effort and separate from the doc save, matching upstream indexer.ts (token replace is
+            // wrapped in its own try/catch so token failures never roll back the entity_indexes write).
+            await ReplaceSearchTokensAsync(entityType, recordId, organizationId, tenantId, doc, ct);
         }
         catch (Exception ex)
         {
@@ -97,10 +102,83 @@ public sealed class QueryIndexCrudIndexer : ICrudIndexer
 
     private async Task RemoveRowAsync(string entityType, string recordId, Guid? organizationId, Guid? tenantId, CancellationToken ct)
     {
+        // Remove the record's tokens too (search-tokens.ts::deleteSearchTokensForRecord), best-effort.
+        await DeleteSearchTokensAsync(entityType, recordId, organizationId, tenantId, ct);
+
         var existing = await FindRowAsync(entityType, recordId, organizationId, tenantId, ct);
         if (existing is null) return;
         _db.Set<EntityIndexRow>().Remove(existing);
         await _db.SaveChangesAsync(ct);
+    }
+
+    // search-tokens.ts::replaceSearchTokensForRecord — delete the record's existing tokens for the doc's
+    // fields in scope, insert the freshly tokenized rows, in one unit of work. Scope match is null-aware
+    // (EF null-semantics turns `== null` into `IS NULL`, mirroring upstream `is not distinct from`).
+    private async Task ReplaceSearchTokensAsync(
+        string entityType, string recordId, Guid? organizationId, Guid? tenantId,
+        IReadOnlyDictionary<string, object?> doc, CancellationToken ct)
+    {
+        try
+        {
+            var config = SearchConfig.Resolve();
+            if (!config.Enabled) return;
+
+            var rows = SearchTokenRowBuilder.Build(doc, config);
+            var docFields = SearchTokenRowBuilder.DocFields(doc);
+
+            var existing = await _db.Set<SearchToken>()
+                .Where(t => t.EntityType == entityType && t.EntityId == recordId)
+                .Where(t => t.OrganizationId == organizationId)
+                .Where(t => t.TenantId == tenantId)
+                .Where(t => docFields.Contains(t.Field))
+                .ToListAsync(ct);
+            if (existing.Count > 0) _db.Set<SearchToken>().RemoveRange(existing);
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var r in rows)
+            {
+                _db.Set<SearchToken>().Add(new SearchToken
+                {
+                    Id = Guid.NewGuid(),
+                    EntityType = entityType,
+                    EntityId = recordId,
+                    OrganizationId = organizationId,
+                    TenantId = tenantId,
+                    Field = r.Field,
+                    TokenHash = r.TokenHash,
+                    Token = r.Token,
+                    CreatedAt = now,
+                });
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // Upstream swallows token-index failures (they must not fail the write). Clear any partial
+            // token tracking so the caller's error path can still record its own log if needed.
+            try { _db.ChangeTracker.Clear(); } catch { /* ignore */ }
+        }
+    }
+
+    // search-tokens.ts::deleteSearchTokensForRecord — remove all of a record's tokens in scope.
+    private async Task DeleteSearchTokensAsync(
+        string entityType, string recordId, Guid? organizationId, Guid? tenantId, CancellationToken ct)
+    {
+        try
+        {
+            var tokens = await _db.Set<SearchToken>()
+                .Where(t => t.EntityType == entityType && t.EntityId == recordId)
+                .Where(t => t.OrganizationId == organizationId)
+                .Where(t => t.TenantId == tenantId)
+                .ToListAsync(ct);
+            if (tokens.Count == 0) return;
+            _db.Set<SearchToken>().RemoveRange(tokens);
+            await _db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            try { _db.ChangeTracker.Clear(); } catch { /* ignore */ }
+        }
     }
 
     private Task<EntityIndexRow?> FindRowAsync(string entityType, string recordId, Guid? organizationId, Guid? tenantId, CancellationToken ct)

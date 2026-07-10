@@ -26,10 +26,6 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
         foreach (var (field, value) in query.Filters)
             filters.Add(new IndexFilter(field, IndexFilterOp.Eq, value));
 
-        // Free-text search maps to a case-insensitive match on the aggregate search field.
-        if (!string.IsNullOrWhiteSpace(query.Search))
-            filters.Add(new IndexFilter(IndexDocument.AggregateSearchField, IndexFilterOp.Ilike, $"%{query.Search}%"));
-
         var sorts = new List<IndexSort> { new(query.SortField, query.SortDescending) };
 
         var request = new QueryIndexRequest
@@ -42,6 +38,9 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
             Page = query.Page,
             PageSize = query.PageSize,
             WithDeleted = query.WithDeleted,
+            // Free-text search resolves via search_tokens (AND-of-hashes), with an ilike-on-search_text
+            // fallback inside the engine when the scope has no tokens.
+            FullTextSearch = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search,
         };
 
         var result = await _engine.QueryAsync(request, ct);

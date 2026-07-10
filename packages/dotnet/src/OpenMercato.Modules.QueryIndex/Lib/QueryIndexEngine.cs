@@ -25,6 +25,11 @@ public sealed record QueryIndexRequest
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 20;
     public bool WithDeleted { get; init; }
+    /// <summary>Raw free-text query. When set, resolved via <c>search_tokens</c> (AND-of-hashes) with an
+    /// ilike-on-<see cref="SearchField"/> fallback when the scope has no tokens (upstream applySearchTokens).</summary>
+    public string? FullTextSearch { get; init; }
+    /// <summary>The doc/token field the free-text search targets (upstream aggregate <c>search_text</c>).</summary>
+    public string SearchField { get; init; } = IndexDocument.AggregateSearchField;
 }
 
 /// <summary>Result of a query: the page of matching record ids (in sort order) + the total match count.</summary>
@@ -67,13 +72,36 @@ public sealed class QueryIndexEngine : IQueryIndexEngine
         if (request.OrganizationIds is { Count: > 0 } orgIds)
             q = q.Where(r => r.OrganizationId == null || orgIds.Contains(r.OrganizationId.Value));
 
+        // Resolve free-text search up front: prefer the tokenized search_tokens path (AND-of-hashes),
+        // fall back to an in-memory ilike on the aggregate field when the scope has no tokens (or the
+        // provider can't run the token query). This runs before row load so it can constrain by id.
+        var filters = request.Filters.Select(NormalizeFilter).ToList();
+        HashSet<string>? tokenIds = null; // non-null ⇒ restrict results to these entity ids (token path)
+        if (!string.IsNullOrWhiteSpace(request.FullTextSearch))
+        {
+            var (mode, matched) = await ResolveSearchAsync(request, ct);
+            switch (mode)
+            {
+                case SearchMode.Token:
+                    tokenIds = matched;
+                    break;
+                case SearchMode.TokenMatchAll:
+                    // Query shorter than minTokenLength ⇒ no token constraint (upstream returns unfiltered).
+                    break;
+                case SearchMode.Fallback:
+                    filters.Add(NormalizeFilter(new IndexFilter(
+                        request.SearchField, IndexFilterOp.Ilike, "%" + request.FullTextSearch + "%")));
+                    break;
+            }
+        }
+
         var rows = await q.ToListAsync(ct);
 
         // Parse docs + apply filters in memory.
-        var filters = request.Filters.Select(NormalizeFilter).ToList();
         var evaluated = new List<(string RecordId, Dictionary<string, object?> Doc)>(rows.Count);
         foreach (var row in rows)
         {
+            if (tokenIds is not null && !tokenIds.Contains(row.EntityId)) continue;
             var doc = DocJson.ParseObject(row.Doc);
             if (filters.All(f => Matches(doc, f)))
                 evaluated.Add((row.EntityId, doc));
@@ -100,6 +128,57 @@ public sealed class QueryIndexEngine : IQueryIndexEngine
             .ToList();
 
         return new QueryIndexResult(ids, total);
+    }
+
+    private enum SearchMode { Token, TokenMatchAll, Fallback }
+
+    /// <summary>
+    /// The read-side port of engine.ts::applySearchTokens. If the (entity_type, field, scope) has any
+    /// <c>search_tokens</c> rows: tokenize the query and return the entity ids that carry <em>all</em> of
+    /// the query's token hashes (AND-of-tokens). If the scope has no tokens — or the token query can't run
+    /// on this provider — signal a literal ilike fallback so nothing regresses when tokens are absent.
+    /// </summary>
+    private async Task<(SearchMode Mode, HashSet<string> Ids)> ResolveSearchAsync(
+        QueryIndexRequest request, CancellationToken ct)
+    {
+        var empty = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            var field = request.SearchField;
+            var scoped = _db.Set<SearchToken>().AsNoTracking()
+                .Where(t => t.EntityType == request.EntityType && t.Field == field)
+                .Where(t => t.TenantId == request.TenantId);
+            if (request.OrganizationIds is { Count: > 0 } orgIds)
+                scoped = scoped.Where(t => t.OrganizationId == null || orgIds.Contains(t.OrganizationId.Value));
+
+            // No tokens for this scope ⇒ fall back to literal ilike (protects legacy/un-tokenized data).
+            if (!await scoped.AnyAsync(ct))
+                return (SearchMode.Fallback, empty);
+
+            var result = SearchTokenizer.Tokenize(request.FullTextSearch!, SearchConfig.Resolve());
+            var hashes = result.Hashes;
+            if (hashes.Count == 0)
+                return (SearchMode.TokenMatchAll, empty);
+
+            // entity ids carrying all query hashes: group (entity_id, hash) pairs, keep those with the full set.
+            var pairs = await scoped
+                .Where(t => hashes.Contains(t.TokenHash))
+                .Select(t => new { t.EntityId, t.TokenHash })
+                .Distinct()
+                .ToListAsync(ct);
+
+            var matched = pairs
+                .GroupBy(p => p.EntityId, StringComparer.Ordinal)
+                .Where(g => g.Select(x => x.TokenHash).Distinct().Count() >= hashes.Count)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            return (SearchMode.Token, matched);
+        }
+        catch
+        {
+            // Provider can't translate the token query (or transient error) ⇒ literal ilike fallback.
+            return (SearchMode.Fallback, empty);
+        }
     }
 
     private static IEnumerable<(string RecordId, Dictionary<string, object?> Doc)> ApplySort(

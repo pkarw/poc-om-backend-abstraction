@@ -161,6 +161,100 @@ public class QueryIndexTests
     }
 
     [Fact]
+    public async Task UpsertOne_writes_search_tokens_and_delete_removes_them()
+    {
+        var db = NewDb();
+        var recordId = Guid.NewGuid().ToString();
+        SeedStorage(db, recordId, "{\"name\":\"Acme Corporation\"}");
+        var indexer = Indexer(db);
+        await indexer.UpsertOneAsync(EntityType, recordId, Org, Tenant, "create");
+
+        var tokens = await db.Set<SearchToken>().Where(t => t.EntityId == recordId).ToListAsync();
+        Assert.NotEmpty(tokens);
+        // search_text is one of the tokenized fields (aggregate search field is not skipped upstream).
+        Assert.Contains(tokens, t => t.Field == "search_text");
+        // The full token "acme" hash is present under search_text.
+        var acmeHash = SearchTokenizer.HashToken("acme", new SearchConfig());
+        Assert.Contains(tokens, t => t.Field == "search_text" && t.TokenHash == acmeHash);
+
+        await indexer.DeleteOneAsync(EntityType, recordId, Org, Tenant);
+        Assert.Equal(0, await db.Set<SearchToken>().CountAsync(t => t.EntityId == recordId));
+    }
+
+    [Fact]
+    public async Task Engine_free_text_search_resolves_via_token_path_with_and_semantics()
+    {
+        var db = NewDb();
+        var indexer = Indexer(db);
+        var a = Guid.NewGuid().ToString();
+        var b = Guid.NewGuid().ToString();
+        SeedStorage(db, a, "{\"name\":\"Acme Corporation\"}");
+        SeedStorage(db, b, "{\"name\":\"Acme Industries\"}");
+        await indexer.UpsertOneAsync(EntityType, a, Org, Tenant, "create");
+        await indexer.UpsertOneAsync(EntityType, b, Org, Tenant, "create");
+
+        var engine = new QueryIndexEngine(db);
+
+        QueryIndexRequest Req(string search) => new()
+        {
+            EntityType = EntityType,
+            TenantId = Tenant,
+            OrganizationIds = new[] { Org },
+            FullTextSearch = search,
+        };
+
+        // "acme" matches both records.
+        var both = await engine.QueryAsync(Req("acme"));
+        Assert.Equal(2, both.Total);
+        Assert.Equal(new HashSet<string> { a, b }, both.RecordIds.ToHashSet());
+
+        // "corporation" matches only record a.
+        var one = await engine.QueryAsync(Req("corporation"));
+        Assert.Equal(new[] { a }, one.RecordIds);
+
+        // AND-of-tokens: "acme corporation" requires all hashes ⇒ only a (b lacks "corporation").
+        var conj = await engine.QueryAsync(Req("acme corporation"));
+        Assert.Equal(new[] { a }, conj.RecordIds);
+
+        // A term present nowhere yields no matches (token path, not a substring fallback).
+        var none = await engine.QueryAsync(Req("zzz"));
+        Assert.Equal(0, none.Total);
+    }
+
+    [Fact]
+    public async Task Engine_free_text_search_falls_back_to_ilike_when_scope_has_no_tokens()
+    {
+        var db = NewDb();
+        // Seed the projection row directly (bypassing the indexer) so NO search_tokens exist for the scope.
+        var recordId = Guid.NewGuid().ToString();
+        var now = DateTimeOffset.UtcNow;
+        db.Set<EntityIndexRow>().Add(new EntityIndexRow
+        {
+            Id = Guid.NewGuid(),
+            EntityType = EntityType,
+            EntityId = recordId,
+            OrganizationId = Org,
+            TenantId = Tenant,
+            Doc = "{\"name\":\"Acme Corporation\",\"search_text\":\"Acme Corporation\"}",
+            IndexVersion = 1,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var engine = new QueryIndexEngine(db);
+        // No tokens for the scope ⇒ the engine falls back to the search_text ilike substring match.
+        var result = await engine.QueryAsync(new QueryIndexRequest
+        {
+            EntityType = EntityType,
+            TenantId = Tenant,
+            OrganizationIds = new[] { Org },
+            FullTextSearch = "corpor",
+        });
+        Assert.Equal(new[] { recordId }, result.RecordIds);
+    }
+
+    [Fact]
     public async Task DeleteOne_removes_the_projection_row()
     {
         var db = NewDb();
