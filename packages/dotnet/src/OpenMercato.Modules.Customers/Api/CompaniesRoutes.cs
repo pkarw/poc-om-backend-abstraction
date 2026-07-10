@@ -66,7 +66,8 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
             var id = CustomersHttp.GuidOf(m.Body, "id") ?? Guid.Empty;
             var r = await m.Bus.ExecuteWithLog<CompanyUpdateInput, CompanyResult>(
                 "customers.companies.update", new CompanyUpdateInput(id, m.Body), m.Ctx);
-            return new CrudMutationOutcome(r.Result.EntityId, r.LogEntry, new { ok = true, updatedAt = CustomersHttp.Iso(r.Result.UpdatedAt) });
+            // Upstream companies PUT returns exactly { ok: true } (OM integration test TC-CRM-035).
+            return new CrudMutationOutcome(r.Result.EntityId, r.LogEntry, new { ok = true });
         },
         UpdateResponse = o => o.Result ?? new { ok = true },
         DeleteDispatch = async m =>

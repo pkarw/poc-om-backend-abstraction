@@ -24,7 +24,7 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
 
         var filters = new List<IndexFilter>();
         foreach (var (field, value) in query.Filters)
-            filters.Add(new IndexFilter(field, IndexFilterOp.Eq, value));
+            filters.Add(new IndexFilter(NormalizeFilterField(field), IndexFilterOp.Eq, value));
 
         var sorts = new List<IndexSort> { new(query.SortField, query.SortDescending) };
 
@@ -50,5 +50,29 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
             if (Guid.TryParse(raw, out var g)) ids.Add(g);
 
         return new CrudIndexQueryResult(ids, result.Total);
+    }
+
+    // Base columns are indexed snake_case (CustomersIndexBaseRowResolver etc.), but list query params
+    // arrive camelCase (e.g. ?pipelineId=). Upstream maps them in each route's buildFilters
+    // (pipelineId -> pipeline_id). Do the same generically: convert non-cf filter keys camelCase ->
+    // snake_case so base-field eq filters match the doc. cf_/cf: keys keep their raw casing.
+    // (OM integration test TC-CRM-023.)
+    private static string NormalizeFilterField(string field)
+    {
+        if (field.StartsWith("cf_", StringComparison.Ordinal) || field.StartsWith("cf:", StringComparison.Ordinal))
+            return field;
+        if (string.IsNullOrEmpty(field)) return field;
+        var sb = new System.Text.StringBuilder(field.Length + 4);
+        for (var i = 0; i < field.Length; i++)
+        {
+            var c = field[i];
+            if (char.IsUpper(c))
+            {
+                if (i > 0 && field[i - 1] != '_') sb.Append('_');
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else sb.Append(c);
+        }
+        return sb.ToString();
     }
 }

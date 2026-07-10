@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OpenMercato.Core.Data;
 using OpenMercato.Modules.Customers.Data;
+using OpenMercato.Modules.Customers.Lib;
 
 namespace OpenMercato.Modules.Customers.Api;
 
@@ -71,28 +72,58 @@ internal static class CustomerDetailEnrichment
             }).ToList();
         }
 
-        // ---- activities (legacy table; non-unified default) --------------------------------------
+        // ---- activities (legacy table + canonical adapter:activity interactions) -----------------
+        // Upstream (legacy mode default): activities = legacy customer_activities (deduped vs bridged) +
+        // canonical NON-task interactions whose source is adapter:activity, mapped to activity summaries
+        // (id = interaction id). (OM integration test TC-CRM-025.)
         var activities = new List<object>();
         if (includeActivities)
         {
-            var rows = await db.Set<CustomerActivity>().AsNoTracking()
-                .Where(a => a.EntityId == id)
-                .OrderByDescending(a => a.OccurredAt).ThenByDescending(a => a.CreatedAt).Take(50).ToListAsync();
-            activities = rows.Select(a => (object)new
-            {
-                id = a.Id.ToString(),
-                activityType = a.ActivityType,
-                subject = a.Subject,
-                body = a.Body,
-                occurredAt = CustomersHttp.Iso(a.OccurredAt),
-                dealId = a.DealId?.ToString(),
-                authorUserId = a.AuthorUserId?.ToString(),
-                authorName = (string?)null,
-                authorEmail = (string?)null,
-                createdAt = CustomersHttp.Iso(a.CreatedAt),
-                appearanceIcon = a.AppearanceIcon,
-                appearanceColor = a.AppearanceColor,
-            }).ToList();
+            var canonicalActs = await db.Set<CustomerInteraction>().AsNoTracking()
+                .Where(i => i.EntityId == id && i.DeletedAt == null && i.InteractionType != InteractionCompat.TaskType
+                            && i.Source == InteractionCompat.ActivityAdapterSource)
+                .ToListAsync();
+            var bridgedActIds = canonicalActs.Select(i => i.Id).ToHashSet();
+
+            var legacyActs = await db.Set<CustomerActivity>().AsNoTracking()
+                .Where(a => a.EntityId == id).ToListAsync();
+
+            var actRows = new List<(DateTimeOffset Sort, string Id, object Item)>();
+            foreach (var a in legacyActs.Where(a => !bridgedActIds.Contains(a.Id)))
+                actRows.Add((a.OccurredAt ?? a.CreatedAt, a.Id.ToString(), new
+                {
+                    id = a.Id.ToString(),
+                    activityType = a.ActivityType,
+                    subject = a.Subject,
+                    body = a.Body,
+                    occurredAt = CustomersHttp.Iso(a.OccurredAt),
+                    dealId = a.DealId?.ToString(),
+                    authorUserId = a.AuthorUserId?.ToString(),
+                    authorName = (string?)null,
+                    authorEmail = (string?)null,
+                    createdAt = CustomersHttp.Iso(a.CreatedAt),
+                    appearanceIcon = a.AppearanceIcon,
+                    appearanceColor = a.AppearanceColor,
+                }));
+            foreach (var i in canonicalActs)
+                actRows.Add((i.OccurredAt ?? i.ScheduledAt ?? i.CreatedAt, i.Id.ToString(), new
+                {
+                    id = i.Id.ToString(),
+                    activityType = i.InteractionType,
+                    subject = i.Title,
+                    body = i.Body,
+                    occurredAt = CustomersHttp.Iso(i.OccurredAt ?? i.ScheduledAt),
+                    dealId = i.DealId?.ToString(),
+                    authorUserId = i.AuthorUserId?.ToString(),
+                    authorName = (string?)null,
+                    authorEmail = (string?)null,
+                    createdAt = CustomersHttp.Iso(i.CreatedAt),
+                    appearanceIcon = i.AppearanceIcon,
+                    appearanceColor = i.AppearanceColor,
+                }));
+            activities = actRows
+                .OrderByDescending(r => r.Sort).ThenByDescending(r => r.Id, StringComparer.Ordinal)
+                .Take(50).Select(r => r.Item).ToList();
         }
 
         // ---- interactions ------------------------------------------------------------------------
@@ -165,29 +196,62 @@ internal static class CustomerDetailEnrichment
             }).ToList();
         }
 
-        // ---- todos (legacy bridge links; detail resolution deferred) -----------------------------
+        // ---- todos (legacy links + canonical adapter:todo task interactions) ---------------------
+        // Upstream (legacy interaction mode, the default): todos = legacy customer_todo_links (deduped
+        // against bridged ids) + canonical task interactions whose source is adapter:todo, each mapped to
+        // a todo summary (todoId = interaction id). (OM integration test TC-CRM-025.)
         var todos = new List<object>();
         if (includeTodos)
         {
-            var rows = await db.Set<CustomerTodoLink>().AsNoTracking()
-                .Where(l => l.EntityId == id)
-                .OrderByDescending(l => l.CreatedAt).Take(50).ToListAsync();
-            todos = rows.Select(l => (object)new
-            {
-                id = l.Id.ToString(),
-                todoId = l.TodoId.ToString(),
-                todoSource = string.IsNullOrWhiteSpace(l.TodoSource) ? "example:todo" : l.TodoSource,
-                createdAt = CustomersHttp.Iso(l.CreatedAt),
-                createdByUserId = l.CreatedByUserId?.ToString(),
-                title = (string?)null,
-                isDone = (bool?)null,
-                priority = (int?)null,
-                severity = (string?)null,
-                description = (string?)null,
-                dueAt = (string?)null,
-                todoOrganizationId = (string?)null,
-                customValues = (object?)null,
-            }).ToList();
+            var canonicalTodos = await db.Set<CustomerInteraction>().AsNoTracking()
+                .Where(i => i.EntityId == id && i.DeletedAt == null && i.InteractionType == InteractionCompat.TaskType
+                            && i.Source == InteractionCompat.TodoAdapterSource)
+                .ToListAsync();
+            var bridgedTodoIds = canonicalTodos.Select(i => i.Id).ToHashSet();
+
+            var links = await db.Set<CustomerTodoLink>().AsNoTracking()
+                .Where(l => l.EntityId == id).ToListAsync();
+
+            var todoRows = new List<(DateTimeOffset Created, string Id, object Item)>();
+            foreach (var l in links.Where(l => !bridgedTodoIds.Contains(l.TodoId)))
+                todoRows.Add((l.CreatedAt, l.Id.ToString(), new
+                {
+                    id = l.Id.ToString(),
+                    todoId = l.TodoId.ToString(),
+                    todoSource = string.IsNullOrWhiteSpace(l.TodoSource) ? InteractionCompat.ExampleTodoSource : l.TodoSource,
+                    createdAt = CustomersHttp.Iso(l.CreatedAt),
+                    createdByUserId = l.CreatedByUserId?.ToString(),
+                    title = (string?)null,
+                    isDone = (bool?)null,
+                    status = (string?)null,
+                    priority = (int?)null,
+                    severity = (string?)null,
+                    description = (string?)null,
+                    dueAt = (string?)null,
+                    todoOrganizationId = (string?)null,
+                    customValues = (object?)null,
+                }));
+            foreach (var i in canonicalTodos)
+                todoRows.Add((i.CreatedAt, i.Id.ToString(), new
+                {
+                    id = i.Id.ToString(),
+                    todoId = i.Id.ToString(),
+                    todoSource = InteractionCompat.TaskSource,
+                    createdAt = CustomersHttp.Iso(i.CreatedAt),
+                    createdByUserId = (string?)null,
+                    title = i.Title,
+                    isDone = (bool?)(i.Status == "done"),
+                    status = i.Status,
+                    priority = i.Priority,
+                    severity = (string?)null,
+                    description = i.Body,
+                    dueAt = CustomersHttp.Iso(i.ScheduledAt),
+                    todoOrganizationId = (string?)null,
+                    customValues = (object?)null,
+                }));
+            todos = todoRows
+                .OrderByDescending(r => r.Created).ThenByDescending(r => r.Id, StringComparer.Ordinal)
+                .Take(50).Select(r => r.Item).ToList();
         }
 
         // ---- counts (always computed) ------------------------------------------------------------

@@ -137,13 +137,13 @@ public class CustomersPhase1Tests
         Assert.Equal("Mia", detail.GetProperty("profile").GetProperty("firstName").GetString());
         Assert.Equal("champion", detail.GetProperty("person").GetProperty("buying_role").GetString());
 
-        // Update (returns { ok, updatedAt }).
+        // Update (returns exactly { ok: true }, matching upstream people PUT — OM test TC-CRM-035).
         var update = await h.Client.PutAsync("/api/customers/people",
             Body($"{{\"id\":\"{id}\",\"jobTitle\":\"VP\"}}"));
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         var updated = await ReadJson(update);
         Assert.True(updated.GetProperty("ok").GetBoolean());
-        Assert.False(updated.GetProperty("updatedAt").GetString() is null);
+        Assert.False(updated.TryGetProperty("updatedAt", out _));
 
         var afterUpdate = await ReadJson(await h.Client.GetAsync($"/api/customers/people/{id}"));
         Assert.Equal("VP", afterUpdate.GetProperty("profile").GetProperty("jobTitle").GetString());

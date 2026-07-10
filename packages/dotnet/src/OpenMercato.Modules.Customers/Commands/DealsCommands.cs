@@ -210,14 +210,12 @@ public sealed class CreateDealCommand
 
         var pipelineStageId = J.GuidOf(body, "pipelineStageId");
         var requestedPipelineId = J.GuidOf(body, "pipelineId");
-        CustomerPipelineStage? stage = null;
-        if (pipelineStageId is { } psid)
-        {
-            stage = await DealWriteHelpers.LoadStageAsync(db, psid, input.TenantId, input.OrganizationId);
-            if (stage is null) throw CommandHttpException.BadRequest("Pipeline stage not found");
-        }
-        if (requestedPipelineId is { } pid && stage is not null && stage.PipelineId != pid)
-            throw CommandHttpException.BadRequest("Pipeline stage does not belong to the selected pipeline");
+        // Upstream (resolvePipelineStageValue) stores pipelineStageId/pipelineId verbatim: an unknown
+        // stage id is NOT an error (label just stays unresolved) and there is NO stage-belongs-to-pipeline
+        // validation. Mirror that — do not throw here. (OM integration test TC-CRM-023.)
+        CustomerPipelineStage? stage = pipelineStageId is { } psid
+            ? await DealWriteHelpers.LoadStageAsync(db, psid, input.TenantId, input.OrganizationId)
+            : null;
 
         var effectivePipelineId = requestedPipelineId ?? stage?.PipelineId;
         var resolvedStageLabel = stage is not null

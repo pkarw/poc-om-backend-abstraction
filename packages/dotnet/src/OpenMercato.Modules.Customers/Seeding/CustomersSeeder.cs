@@ -71,6 +71,59 @@ public static class CustomersSeeder
 
     private static DictSeed[] Seeds(params string[] values) => values.Select(v => new DictSeed(v)).ToArray();
 
+    // Currency codes seeded into the generic 'currency' dictionary (upstream seeds all Intl currencies;
+    // this is the priority set + common ISO 4217 codes — enough for the currency selector + deal values).
+    private static readonly (string Code, string Label)[] CurrencyDictionarySeeds =
+    {
+        ("EUR", "EUR – Euro"), ("USD", "USD – US Dollar"), ("GBP", "GBP – British Pound"), ("PLN", "PLN – Polish Zloty"),
+        ("AUD", "AUD – Australian Dollar"), ("BRL", "BRL – Brazilian Real"), ("CAD", "CAD – Canadian Dollar"),
+        ("CHF", "CHF – Swiss Franc"), ("CNY", "CNY – Chinese Yuan"), ("CZK", "CZK – Czech Koruna"),
+        ("DKK", "DKK – Danish Krone"), ("HKD", "HKD – Hong Kong Dollar"), ("HUF", "HUF – Hungarian Forint"),
+        ("ILS", "ILS – Israeli New Shekel"), ("INR", "INR – Indian Rupee"), ("JPY", "JPY – Japanese Yen"),
+        ("KRW", "KRW – South Korean Won"), ("MXN", "MXN – Mexican Peso"), ("NOK", "NOK – Norwegian Krone"),
+        ("NZD", "NZD – New Zealand Dollar"), ("RON", "RON – Romanian Leu"), ("SEK", "SEK – Swedish Krona"),
+        ("SGD", "SGD – Singapore Dollar"), ("TRY", "TRY – Turkish Lira"), ("UAH", "UAH – Ukrainian Hryvnia"),
+        ("ZAR", "ZAR – South African Rand"),
+    };
+
+    /// <summary>Port of <c>seedCurrencyDictionary</c>: ensure a generic <c>Dictionary</c> (key=<c>currency</c>,
+    /// isSystem) + a <c>DictionaryEntry</c> per currency code for the scope. Idempotent.</summary>
+    private static async Task SeedCurrencyDictionaryAsync(
+        AppDbContext db, Guid tenantId, Guid organizationId, DateTimeOffset now, CancellationToken ct)
+    {
+        var dict = await db.Set<OpenMercato.Modules.Dictionaries.Data.Dictionary>().FirstOrDefaultAsync(d =>
+            d.TenantId == tenantId && d.OrganizationId == organizationId && d.Key == "currency" && d.DeletedAt == null, ct);
+        if (dict is null)
+        {
+            dict = new OpenMercato.Modules.Dictionaries.Data.Dictionary
+            {
+                Id = Guid.NewGuid(), OrganizationId = organizationId, TenantId = tenantId,
+                Key = "currency", Name = "Currencies", Description = "ISO 4217 currencies",
+                IsSystem = true, IsActive = true, ManagerVisibility = "default",
+                CreatedAt = now, UpdatedAt = now,
+            };
+            db.Set<OpenMercato.Modules.Dictionaries.Data.Dictionary>().Add(dict);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var existing = await db.Set<OpenMercato.Modules.Dictionaries.Data.DictionaryEntry>()
+            .Where(e => e.DictionaryId == dict.Id && e.TenantId == tenantId && e.OrganizationId == organizationId)
+            .Select(e => e.NormalizedValue).ToListAsync(ct);
+        var have = new HashSet<string>(existing, StringComparer.Ordinal);
+        var pos = existing.Count;
+        foreach (var (code, label) in CurrencyDictionarySeeds)
+        {
+            var norm = code.ToLowerInvariant();
+            if (!have.Add(norm)) continue;
+            db.Set<OpenMercato.Modules.Dictionaries.Data.DictionaryEntry>().Add(new OpenMercato.Modules.Dictionaries.Data.DictionaryEntry
+            {
+                Id = Guid.NewGuid(), DictionaryId = dict.Id, OrganizationId = organizationId, TenantId = tenantId,
+                Value = code, NormalizedValue = norm, Label = label, Position = pos++, CreatedAt = now, UpdatedAt = now,
+            });
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Build a bare-key custom-field value map (the <c>custom</c> block of an upstream example
     /// record). Values are native CLR types (string/bool/int) — <see cref="RecordCustomFields.SetAsync"/>
     /// routes each to its storage column from the installed def's kind.</summary>
@@ -265,6 +318,11 @@ public static class CustomersSeeder
             });
         }
         await db.SaveChangesAsync(ct);
+
+        // 3b) Generic 'currency' dictionary (upstream seedCurrencyDictionary). The customers detail/deal
+        // pages fetch /api/customers/dictionaries/currency; a 404 there throws an uncaught
+        // "Currency dictionary is not configured yet." on the page and breaks its interactions.
+        await SeedCurrencyDictionaryAsync(db, tenantId, organizationId, now, ct);
 
         // 4) Default pipeline (seedDefaultPipeline port). Guarded by an existing default pipeline for the scope.
         var hasDefaultPipeline = await db.Set<CustomerPipeline>().AnyAsync(p =>

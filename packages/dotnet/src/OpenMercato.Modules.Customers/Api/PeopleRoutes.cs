@@ -76,7 +76,8 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             var id = CustomersHttp.GuidOf(m.Body, "id") ?? Guid.Empty;
             var r = await m.Bus.ExecuteWithLog<PersonUpdateInput, PersonResult>(
                 "customers.people.update", new PersonUpdateInput(id, m.Body), m.Ctx);
-            return new CrudMutationOutcome(r.Result.EntityId, r.LogEntry, new { ok = true, updatedAt = CustomersHttp.Iso(r.Result.UpdatedAt) });
+            // Upstream people PUT returns exactly { ok: true } (OM integration test TC-CRM-035).
+            return new CrudMutationOutcome(r.Result.EntityId, r.LogEntry, new { ok = true });
         },
         UpdateResponse = o => o.Result ?? new { ok = true },
         DeleteDispatch = async m =>
@@ -119,6 +120,10 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         ["temperature"] = e.Temperature,
         ["renewalQuarter"] = e.RenewalQuarter,
         ["nextInteractionAt"] = CustomersHttp.Iso(e.NextInteractionAt),
+        ["nextInteractionName"] = e.NextInteractionName,
+        ["nextInteractionRefId"] = e.NextInteractionRefId,
+        ["nextInteractionIcon"] = e.NextInteractionIcon,
+        ["nextInteractionColor"] = e.NextInteractionColor,
         ["isActive"] = e.IsActive,
         ["organizationId"] = e.OrganizationId.ToString(),
         ["tenantId"] = e.TenantId.ToString(),
@@ -147,6 +152,7 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         ["temperature"] = e.Temperature,
         ["renewal_quarter"] = e.RenewalQuarter,
         ["next_interaction_at"] = CustomersHttp.Iso(e.NextInteractionAt),
+        ["next_interaction_name"] = e.NextInteractionName,
         ["is_active"] = e.IsActive,
         ["organization_id"] = e.OrganizationId.ToString(),
         ["tenant_id"] = e.TenantId.ToString(),
@@ -206,6 +212,18 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             return new { id = l.CompanyEntityId.ToString(), displayName = c?.DisplayName, isPrimary = l.IsPrimary };
         }).ToList();
 
+        // Upstream resolves detail.company from the profile's legacy single-company relation
+        // (profile.company → { id, displayName }), NOT the person↔company link rows (OM integration
+        // test TC-CRM-027). Fall back to the primary link only when the profile has no company.
+        object? companyObj = null;
+        if (profile?.CompanyEntityId is { } profileCompanyId)
+        {
+            var c = companies.FirstOrDefault(x => x.Id == profileCompanyId)
+                ?? await db.Set<CustomerEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == profileCompanyId);
+            if (c is not null) companyObj = new { id = c.Id.ToString(), displayName = c.DisplayName };
+        }
+        companyObj ??= companySummaries.FirstOrDefault();
+
         // Best-effort enrichment of the timeline collections, include-token gated (see CustomerDetailEnrichment).
         var tokens = CustomerDetailEnrichment.ParseIncludeTokens(http);
         var enriched = await CustomerDetailEnrichment.LoadAsync(db, entity, isCompany: false, tokens);
@@ -225,7 +243,7 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
             todos = enriched.Todos,
             isPrimary = links.Any(l => l.IsPrimary),
             companies = companySummaries,
-            company = companySummaries.FirstOrDefault(),
+            company = companyObj,
             plannedActivitiesPreview = Array.Empty<object>(),
             counts = new
             {
@@ -415,6 +433,8 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
         id = p.Id.ToString(), firstName = p.FirstName, lastName = p.LastName, preferredName = p.PreferredName,
         jobTitle = p.JobTitle, department = p.Department, seniority = p.Seniority, timezone = p.Timezone,
         linkedInUrl = p.LinkedInUrl, twitterUrl = p.TwitterUrl, companyEntityId = p.CompanyEntityId?.ToString(),
+        // Upstream exposes profile.updatedAt (OM integration test TC-CRM-024).
+        updatedAt = CustomersHttp.Iso(p.UpdatedAt),
     };
 
     internal static object ProjectAddress(CustomerAddress a) => new
