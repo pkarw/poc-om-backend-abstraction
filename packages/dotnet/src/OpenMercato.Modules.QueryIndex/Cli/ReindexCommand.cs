@@ -31,11 +31,12 @@ public sealed class ReindexCommand : ICliCommand
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var indexer = scope.ServiceProvider.GetRequiredService<ICrudIndexer>();
+        var baseRows = scope.ServiceProvider.GetService<IIndexBaseRowResolver>();
 
         var tenantArg = parsed.Get("tenant", "tenantId");
         Guid? tenantId = tenantArg is not null && Guid.TryParse(tenantArg, out var t) ? t : null;
 
-        var processed = await Reindexer.ReindexEntityAsync(db, indexer, entityType!, tenantId);
+        var processed = await Reindexer.ReindexEntityAsync(db, indexer, entityType!, tenantId, baseRows);
         Console.WriteLine($"query_index:reindex: entity={entityType} tenant={(tenantId?.ToString() ?? "*")} processed={processed}");
         return 0;
     }

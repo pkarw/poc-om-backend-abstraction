@@ -23,20 +23,32 @@ public static class Reindexer
     public static bool IsValidEntityIdShape(string? entityType)
         => !string.IsNullOrWhiteSpace(entityType) && EntityIdShape.IsMatch(entityType);
 
-    /// <summary>Re-project every storage-backed record of an entity type (in scope) into <c>entity_indexes</c>.</summary>
+    /// <summary>
+    /// Re-project every BASE record of an entity type (in scope) into <c>entity_indexes</c>. The record
+    /// source is the <see cref="IIndexBaseRowResolver"/> chain (<see cref="IIndexBaseRowResolver.EnumerateRecordIdsAsync"/>),
+    /// so module-owned entities (customers people/companies/deals in their own tables) are walked, not just
+    /// <c>custom_entities_storage</c> — the previous storage-only enumeration silently reindexed 0 rows for
+    /// those (the "full reindex does nothing" bug).
+    /// </summary>
     public static async Task<int> ReindexEntityAsync(
-        AppDbContext db, ICrudIndexer indexer, string entityType, Guid? tenantId, CancellationToken ct = default)
+        AppDbContext db, ICrudIndexer indexer, string entityType, Guid? tenantId,
+        IIndexBaseRowResolver? baseRows = null, CancellationToken ct = default)
     {
-        var records = await db.Set<CustomEntityStorage>().AsNoTracking()
-            .Where(s => s.EntityType == entityType && s.DeletedAt == null)
-            .Where(s => tenantId == null || s.TenantId == null || s.TenantId == tenantId)
-            .Select(s => new { s.EntityId, s.OrganizationId, s.TenantId })
-            .ToListAsync(ct);
+        IReadOnlyList<(string RecordId, Guid? OrganizationId, Guid? TenantId)>? records =
+            baseRows is null ? null : await baseRows.EnumerateRecordIdsAsync(entityType, tenantId, ct);
+
+        // Fallback (no resolver / resolver disclaims the type): the generic storage source.
+        records ??= (await db.Set<CustomEntityStorage>().AsNoTracking()
+                .Where(s => s.EntityType == entityType && s.DeletedAt == null)
+                .Where(s => tenantId == null || s.TenantId == null || s.TenantId == tenantId)
+                .Select(s => new { s.EntityId, s.OrganizationId, s.TenantId })
+                .ToListAsync(ct))
+            .Select(s => (s.EntityId, s.OrganizationId, s.TenantId)).ToList();
 
         var count = 0;
         foreach (var r in records)
         {
-            await indexer.UpsertOneAsync(entityType, r.EntityId, r.OrganizationId, r.TenantId, "reindex", ct);
+            await indexer.UpsertOneAsync(entityType, r.RecordId, r.OrganizationId, r.TenantId, "reindex", ct);
             count++;
         }
         return count;

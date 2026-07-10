@@ -90,6 +90,39 @@ public sealed class CustomersIndexBaseRowResolver : IIndexBaseRowResolver
         return doc;
     }
 
+    /// <summary>Enumerate every customers read-model record of the type in scope (the FULL-reindex source):
+    /// deals from <c>customer_deals</c>, people/companies from <c>customer_entities</c> by kind. Non-customers
+    /// entity types delegate to the generic storage resolver.</summary>
+    public async Task<IReadOnlyList<(string RecordId, Guid? OrganizationId, Guid? TenantId)>?> EnumerateRecordIdsAsync(
+        string entityType, Guid? tenantId, CancellationToken ct = default)
+    {
+        if (entityType == "customers:customer_deal")
+        {
+            var rows = await _db.Set<CustomerDeal>().AsNoTracking()
+                .Where(d => d.DeletedAt == null)
+                .Where(d => tenantId == null || d.TenantId == tenantId)
+                .Select(d => new { d.Id, d.OrganizationId, d.TenantId })
+                .ToListAsync(ct);
+            return rows.Select(r => (r.Id.ToString(), (Guid?)r.OrganizationId, (Guid?)r.TenantId)).ToList();
+        }
+
+        var kind = entityType switch
+        {
+            "customers:customer_person_profile" => "person",
+            "customers:customer_company_profile" => "company",
+            _ => null,
+        };
+        if (kind is null)
+            return await _fallback.EnumerateRecordIdsAsync(entityType, tenantId, ct);
+
+        var entities = await _db.Set<CustomerEntity>().AsNoTracking()
+            .Where(e => e.Kind == kind && e.DeletedAt == null)
+            .Where(e => tenantId == null || e.TenantId == tenantId)
+            .Select(e => new { e.Id, e.OrganizationId, e.TenantId })
+            .ToListAsync(ct);
+        return entities.Select(r => (r.Id.ToString(), (Guid?)r.OrganizationId, (Guid?)r.TenantId)).ToList();
+    }
+
     /// <summary>Project a <c>customer_deals</c> row into the index base doc (snake-case keys matching the
     /// deal list <c>fields</c>), so <c>customers:customer_deal</c> lists filter/sort by base + cf fields.</summary>
     private async Task<IReadOnlyDictionary<string, object?>?> LoadDealAsync(string recordId, CancellationToken ct)

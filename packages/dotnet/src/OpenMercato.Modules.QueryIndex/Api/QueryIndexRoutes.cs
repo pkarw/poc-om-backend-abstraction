@@ -51,10 +51,16 @@ public static class QueryIndexRoutes
             .Distinct()
             .ToListAsync();
 
+        var baseRows = http.RequestServices.GetService<IIndexBaseRowResolver>();
+
         var items = new List<object>();
         foreach (var entityType in entityTypes)
         {
-            var baseCount = await db.Set<CustomEntityStorage>().AsNoTracking()
+            // Base count = the resolver's record source (module tables + storage), not storage-only —
+            // otherwise module-owned entities (customers) show a permanent 0-vs-N mismatch (spec: status parity).
+            var enumerated = baseRows is null ? null
+                : await baseRows.EnumerateRecordIdsAsync(entityType, tenantId);
+            var baseCount = enumerated?.Count ?? await db.Set<CustomEntityStorage>().AsNoTracking()
                 .CountAsync(s => s.EntityType == entityType && s.DeletedAt == null
                                  && (s.TenantId == null || s.TenantId == tenantId));
             var indexQuery = db.Set<EntityIndexRow>().AsNoTracking()
@@ -102,7 +108,8 @@ public static class QueryIndexRoutes
 
         var db = http.RequestServices.GetRequiredService<AppDbContext>();
         var indexer = http.RequestServices.GetRequiredService<ICrudIndexer>();
-        var processed = await Reindexer.ReindexEntityAsync(db, indexer, entityType!, ctx!.TenantId);
+        var baseRows = http.RequestServices.GetService<IIndexBaseRowResolver>();
+        var processed = await Reindexer.ReindexEntityAsync(db, indexer, entityType!, ctx!.TenantId, baseRows);
         return Result(new { ok = true, processed }, 200);
     }
 
