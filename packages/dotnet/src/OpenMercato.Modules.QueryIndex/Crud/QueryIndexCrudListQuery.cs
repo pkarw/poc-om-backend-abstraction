@@ -16,6 +16,12 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
     private readonly IQueryIndexEngine _engine;
     public QueryIndexCrudListQuery(IQueryIndexEngine engine) => _engine = engine;
 
+    // Query params that are relational/exclusion filters, not index doc fields — never map them to a doc `=`.
+    private static readonly HashSet<string> NonDocFilterParams = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "excludeLinkedPersonId", "excludeLinkedCompanyId", "excludeLinkedDealId",
+    };
+
     public async Task<CrudIndexQueryResult?> ResolveListAsync(
         string entityType, CrudListQuery query, CommandContext ctx, CancellationToken ct = default)
     {
@@ -24,7 +30,14 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
 
         var filters = new List<IndexFilter>();
         foreach (var (field, value) in query.Filters)
+        {
+            // Some query params are NOT index doc fields — they're relational/exclusion filters the route
+            // resolves itself (e.g. the entity-link pickers pass excludeLinkedPersonId/CompanyId). Applying
+            // them as a doc `=` filter matches nothing and empties the list (blank pickers). Skip them here;
+            // the owning route applies the real semantics. (OM integration test TC-CRM-005.)
+            if (NonDocFilterParams.Contains(field)) continue;
             filters.Add(new IndexFilter(NormalizeFilterField(field), IndexFilterOp.Eq, value));
+        }
 
         var sorts = new List<IndexSort> { new(query.SortField, query.SortDescending) };
 
