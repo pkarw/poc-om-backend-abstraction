@@ -103,6 +103,16 @@ services:
       OM_SEED_ON_BOOT: "1"
       OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
       OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:-secret}
+      # Auth rate-limit: upstream integration mode. Only requests carrying `x-om-test-rate-limit: on`
+      # (the dedicated TC-AUTH-016 rate-limit specs) are limited; every other login (getAuthToken in
+      # all the other specs) is exempt. Without this, behind Caddy all `admin` logins share one
+      # compound counter (spoofed x-forwarded-for is overridden by the proxy) and cascade to 429s.
+      OM_TEST_MODE: "1"
+      OM_TEST_AUTH_RATE_LIMIT_MODE: opt-in
+      # Caddy is configured (Caddyfile) to forward the client-supplied X-Forwarded-For verbatim, so the
+      # rate-limit specs' per-test spoofed client IP reaches .NET as the single leftmost entry — trust 1
+      # hop and read it. (Without XFF preservation the per-test IPs collapse and TC-AUTH-016 fails.)
+      RATE_LIMIT_TRUST_PROXY_DEPTH: "1"
       # Sidebar: .NET fetches OM's nav from here and filters it to the ported modules only.
       OM_NAV_UPSTREAM: http://om-app:3000
       PORT: "8080"

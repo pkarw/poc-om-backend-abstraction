@@ -24,7 +24,13 @@
 	# ported modules. See OpenMercato.Modules.Auth/Api/AdminNavRouteGroup.cs.
 	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
 	handle @ported {
-		reverse_proxy dotnet-api:8080
+		reverse_proxy dotnet-api:8080 {
+			# Preserve the client-supplied X-Forwarded-For verbatim (do NOT append Caddy's own hop).
+			# The auth rate-limit specs (TC-AUTH-016) spoof a distinct client IP per test to get an
+			# independent limit bucket; if Caddy rewrites XFF they all collapse to one IP and the
+			# shared IP-layer limit trips. The .NET limiter then reads the leftmost entry (depth 1).
+			header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+		}
 	}
 	# --- END generated ported-module routes ---
 
