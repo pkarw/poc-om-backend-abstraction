@@ -119,6 +119,15 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     /// <summary>Post-list decorator (upstream <c>afterList</c> hook); runs after custom-field decoration.</summary>
     public Func<IReadOnlyList<IDictionary<string, object?>>, CommandContext, HttpContext, Task>? ListHook { get; init; }
 
+    /// <summary>
+    /// Resolve a relational id restriction for the list (upstream <c>applyEntityIdRestriction</c>): reads
+    /// association filters that are NOT index doc fields (e.g. the deals list <c>?personId=</c>/
+    /// <c>?companyId=</c>) and returns the record ids they narrow to — <c>null</c> for "no such filter",
+    /// an empty list for "filter present but nothing matches". The result is applied on both the index and
+    /// fallback list paths.
+    /// </summary>
+    public Func<CrudListQuery, CommandContext, HttpContext, Task<IReadOnlyList<Guid>?>>? ResolveListRestrictIds { get; init; }
+
     // ---- List export (the OM "Export" button; upstream CrudExportOptions) ----------------------
 
     /// <summary>

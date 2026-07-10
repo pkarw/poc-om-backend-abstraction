@@ -106,6 +106,18 @@ public static class CrudRoute
         var db = services.GetRequiredService<AppDbContext>();
         var customFields = services.GetRequiredService<ICrudCustomFields>();
 
+        // Relational association restriction (upstream applyEntityIdRestriction): resolve non-doc filters
+        // like ?personId=/?companyId= into a record-id set that narrows both list paths.
+        if (config.ResolveListRestrictIds is not null)
+        {
+            var restrict = await config.ResolveListRestrictIds(query, ctx, http);
+            if (restrict is not null)
+            {
+                if (restrict.Count == 0) return (new List<IDictionary<string, object?>>(), 0);
+                query = query with { RestrictIds = restrict };
+            }
+        }
+
         // Index-backed list (opt-in): resolve matching ids (incl. cf:<key> filter/sort) from the query
         // index, then load those base rows by id in index order (upstream queryEngine list path, R49).
         if (config.UseIndexList)
@@ -124,6 +136,7 @@ public static class CrudRoute
         var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
         q = ApplyScope(q, config, ctx, query.WithDeleted);
         if (query.Ids.Count > 0) q = q.Where(BuildIdInPredicate(config.IdSelector, query.Ids));
+        if (query.RestrictIds is { Count: > 0 } restrictIds) q = q.Where(BuildIdInPredicate(config.IdSelector, restrictIds));
         if (config.ApplyFilters is not null) q = config.ApplyFilters(q, query, ctx);
 
         var total = await q.CountAsync();

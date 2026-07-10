@@ -29,6 +29,14 @@ public sealed record CrudListQuery
 
     /// <summary>Remaining query params (arbitrary filter fields incl. dynamic <c>cf_*</c>).</summary>
     public required IReadOnlyDictionary<string, string> Filters { get; init; }
+
+    /// <summary>
+    /// Optional relational restriction resolved by a route (upstream <c>applyEntityIdRestriction</c>): when
+    /// non-null the list is limited to these record ids (an empty list means "no matches"). Used for
+    /// association filters like the deals list <c>?personId=</c>/<c>?companyId=</c> that are NOT index doc
+    /// fields — the route resolves the linked record ids and sets this.
+    /// </summary>
+    public IReadOnlyList<Guid>? RestrictIds { get; init; }
 }
 
 /// <summary>Reusable parsing + envelope helpers shared by every CRUD list endpoint.</summary>

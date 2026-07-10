@@ -30,6 +30,9 @@ public sealed record QueryIndexRequest
     public string? FullTextSearch { get; init; }
     /// <summary>The doc/token field the free-text search targets (upstream aggregate <c>search_text</c>).</summary>
     public string SearchField { get; init; } = IndexDocument.AggregateSearchField;
+    /// <summary>Relational restriction (upstream applyEntityIdRestriction): when non-null, only these record
+    /// ids may match (empty ⇒ no matches). Used for association filters resolved outside the doc.</summary>
+    public IReadOnlyList<string>? RestrictRecordIds { get; init; }
 }
 
 /// <summary>Result of a query: the page of matching record ids (in sort order) + the total match count.</summary>
@@ -97,10 +100,15 @@ public sealed class QueryIndexEngine : IQueryIndexEngine
 
         var rows = await q.ToListAsync(ct);
 
+        // Relational restriction (applyEntityIdRestriction): non-null ⇒ only these ids may match.
+        var restrictIds = request.RestrictRecordIds is null ? null
+            : new HashSet<string>(request.RestrictRecordIds, StringComparer.Ordinal);
+
         // Parse docs + apply filters in memory.
         var evaluated = new List<(string RecordId, Dictionary<string, object?> Doc)>(rows.Count);
         foreach (var row in rows)
         {
+            if (restrictIds is not null && !restrictIds.Contains(row.EntityId)) continue;
             if (tokenIds is not null && !tokenIds.Contains(row.EntityId)) continue;
             var doc = DocJson.ParseObject(row.Doc);
             if (filters.All(f => Matches(doc, f)))

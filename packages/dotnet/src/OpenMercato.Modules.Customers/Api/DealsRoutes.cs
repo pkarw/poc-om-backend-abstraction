@@ -69,6 +69,7 @@ public sealed class DealsRoutes : ICustomersRouteGroup
         ApplyFilters = ApplyDealFilters,
         ProjectItem = ProjectDealListItem,
         ListHook = DecorateAssociationsAsync,
+        ResolveListRestrictIds = ResolveDealAssociationIdsAsync,
         CreatedEvent = "customers.deal.created",
         UpdatedEvent = "customers.deal.updated",
         DeletedEvent = "customers.deal.deleted",
@@ -96,6 +97,42 @@ public sealed class DealsRoutes : ICustomersRouteGroup
             return new CrudMutationOutcome(r.Result.DealId, r.LogEntry);
         },
     };
+
+    // Resolve the deals ?personId=/?companyId=/?personIds=/?companyIds= association filters into the set of
+    // linked deal ids (upstream applyEntityIdRestriction). Union within a multi-id list, intersect across
+    // the person-set and company-set. Returns null when no association filter is present, an empty list when
+    // one is present but matches nothing. (OM integration tests TC-CRM-046/047.)
+    private static async Task<IReadOnlyList<Guid>?> ResolveDealAssociationIdsAsync(CrudListQuery query, CommandContext ctx, HttpContext http)
+    {
+        List<Guid> Ids(string key)
+        {
+            var acc = new List<Guid>();
+            if (query.Filters.TryGetValue(key, out var raw) && !string.IsNullOrWhiteSpace(raw))
+                foreach (var part in raw.Split(','))
+                    if (Guid.TryParse(part.Trim(), out var g)) acc.Add(g);
+            return acc;
+        }
+
+        var personIds = Ids("personId").Concat(Ids("personIds")).Distinct().ToList();
+        var companyIds = Ids("companyId").Concat(Ids("companyIds")).Distinct().ToList();
+        if (personIds.Count == 0 && companyIds.Count == 0) return null;
+
+        var db = http.RequestServices.GetRequiredService<AppDbContext>();
+        HashSet<Guid>? result = null;
+        if (personIds.Count > 0)
+        {
+            var pd = await db.Set<CustomerDealPersonLink>().AsNoTracking()
+                .Where(l => personIds.Contains(l.PersonEntityId)).Select(l => l.DealId).Distinct().ToListAsync();
+            result = pd.ToHashSet();
+        }
+        if (companyIds.Count > 0)
+        {
+            var cd = (await db.Set<CustomerDealCompanyLink>().AsNoTracking()
+                .Where(l => companyIds.Contains(l.CompanyEntityId)).Select(l => l.DealId).Distinct().ToListAsync()).ToHashSet();
+            result = result is null ? cd : result.Intersect(cd).ToHashSet();
+        }
+        return (result ?? new HashSet<Guid>()).ToList();
+    }
 
     internal static IDictionary<string, object?> ProjectDealListItem(CustomerDeal d) => new Dictionary<string, object?>
     {

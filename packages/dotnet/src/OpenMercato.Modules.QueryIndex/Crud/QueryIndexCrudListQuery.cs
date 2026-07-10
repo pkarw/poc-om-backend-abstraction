@@ -20,6 +20,8 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
     private static readonly HashSet<string> NonDocFilterParams = new(StringComparer.OrdinalIgnoreCase)
     {
         "excludeLinkedPersonId", "excludeLinkedCompanyId", "excludeLinkedDealId",
+        // Association filters — resolved to record ids by the route (CrudListQuery.RestrictIds), not doc fields.
+        "personId", "companyId", "personIds", "companyIds",
     };
 
     public async Task<CrudIndexQueryResult?> ResolveListAsync(
@@ -54,6 +56,8 @@ public sealed class QueryIndexCrudListQuery : ICrudIndexQuery
             // Free-text search resolves via search_tokens (AND-of-hashes), with an ilike-on-search_text
             // fallback inside the engine when the scope has no tokens.
             FullTextSearch = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search,
+            // Relational association restriction resolved by the route (e.g. deals ?personId=).
+            RestrictRecordIds = query.RestrictIds?.Select(id => id.ToString()).ToList(),
         };
 
         var result = await _engine.QueryAsync(request, ct);
