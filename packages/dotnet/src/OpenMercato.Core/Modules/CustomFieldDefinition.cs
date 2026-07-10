@@ -13,13 +13,21 @@ namespace OpenMercato.Core.Modules;
 /// <param name="Required">Whether a value is required.</param>
 /// <param name="Multi">Whether the field holds multiple values.</param>
 /// <param name="Options">Allowed options for <c>"select"</c>-like kinds; null otherwise.</param>
+/// <param name="Description">Help text surfaced in forms/admin (upstream cf <c>description</c>).</param>
+/// <param name="Filterable">Opt this field into list filter chips (upstream cf <c>filterable</c>). Null = default (false).</param>
+/// <param name="ListVisible">Show this field as a list column (upstream cf <c>listVisible</c>). Null = default (true).</param>
+/// <param name="DefaultValue">Form default (upstream cf <c>defaultValue</c>, e.g. <c>false</c> for booleans). Null = none.</param>
 public record CustomFieldDefinition(
     string Key,
     string Kind,
     string Label,
     bool Required = false,
     bool Multi = false,
-    string[]? Options = null);
+    string[]? Options = null,
+    string? Description = null,
+    bool? Filterable = null,
+    bool? ListVisible = null,
+    object? DefaultValue = null);
 
 /// <summary>
 /// A set of custom fields attached to one entity, mirroring upstream

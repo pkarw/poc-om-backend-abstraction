@@ -155,6 +155,7 @@ public static class DefinitionsRoutes
         bool Bool(string n, bool dflt) => cfg is { ValueKind: JsonValueKind.Object } c && c.TryGetProperty(n, out var v) ? v.ValueKind == JsonValueKind.True : dflt;
         object? Options() => cfg is { ValueKind: JsonValueKind.Object } c && c.TryGetProperty("options", out var v) && v.ValueKind == JsonValueKind.Array
             ? v.EnumerateArray().Select(JsonValues.ToClr).ToList() : null;
+        object? Raw(string n) => cfg is { ValueKind: JsonValueKind.Object } c && c.TryGetProperty(n, out var v) ? JsonValues.ToClr(v) : null;
 
         return new
         {
@@ -168,6 +169,7 @@ public static class DefinitionsRoutes
             filterable = Bool("filterable", false),
             formEditable = Bool("formEditable", true),
             listVisible = Bool("listVisible", true),
+            defaultValue = Raw("defaultValue"),
             priority = Priority(d),
             entityId,
         };

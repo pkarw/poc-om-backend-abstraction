@@ -124,6 +124,13 @@ public static class InstallFromCe
         };
         if (field.Options is { Length: > 0 })
             map["options"] = field.Options;
+        // CONFIG_PASSTHROUGH_KEYS: emit only when declared (upstream keeps absent keys out of config so the
+        // API defaults apply — filterable=false, listVisible=true). This is what surfaces cf filter chips,
+        // help text, list-column visibility and form defaults on the OM frontend.
+        if (!string.IsNullOrEmpty(field.Description)) map["description"] = field.Description;
+        if (field.Filterable is bool f) map["filterable"] = f;
+        if (field.ListVisible is bool lv) map["listVisible"] = lv;
+        if (field.DefaultValue is not null) map["defaultValue"] = field.DefaultValue;
         return JsonSerializer.Serialize(map);
     }
 

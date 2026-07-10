@@ -279,34 +279,50 @@ public sealed class CustomersModule : IModule
         new CustomFieldSet("customers:customer_interaction", ActivityFields),
     };
 
+    // Metadata (description/filterable/listVisible/defaultValue) mirrors customFieldDefaults.ts so the OM
+    // frontend surfaces cf filter chips, help text, list-column visibility and boolean form defaults.
     private static readonly IReadOnlyList<CustomFieldDefinition> PersonFields = new[]
     {
-        new CustomFieldDefinition("buying_role", "select", "Buying role", Options: new[] { "economic_buyer", "champion", "technical_evaluator", "influencer" }),
-        new CustomFieldDefinition("preferred_pronouns", "text", "Preferred pronouns"),
-        new CustomFieldDefinition("newsletter_opt_in", "boolean", "Newsletter opt-in"),
+        new CustomFieldDefinition("buying_role", "select", "Buying role", Options: new[] { "economic_buyer", "champion", "technical_evaluator", "influencer" },
+            Description: "Contact role within the buying committee.", Filterable: true),
+        new CustomFieldDefinition("preferred_pronouns", "text", "Preferred pronouns",
+            Description: "How the contact prefers to be addressed."),
+        new CustomFieldDefinition("newsletter_opt_in", "boolean", "Newsletter opt-in",
+            Description: "Indicates whether marketing newsletters are permitted.", DefaultValue: false),
     };
 
     private static readonly IReadOnlyList<CustomFieldDefinition> CompanyFields = new[]
     {
-        new CustomFieldDefinition("relationship_health", "select", "Relationship health", Options: new[] { "healthy", "monitor", "at_risk" }),
-        new CustomFieldDefinition("renewal_quarter", "select", "Renewal quarter", Options: new[] { "Q1", "Q2", "Q3", "Q4" }),
-        new CustomFieldDefinition("executive_notes", "multiline", "Executive notes"),
-        new CustomFieldDefinition("customer_marketing_case", "boolean", "Marketing case study ready"),
+        new CustomFieldDefinition("relationship_health", "select", "Relationship health", Options: new[] { "healthy", "monitor", "at_risk" },
+            Description: "Overall account health assessment.", Filterable: true),
+        new CustomFieldDefinition("renewal_quarter", "select", "Renewal quarter", Options: new[] { "Q1", "Q2", "Q3", "Q4" },
+            Description: "Expected renewal quarter for subscription accounts.", Filterable: true),
+        new CustomFieldDefinition("executive_notes", "multiline", "Executive notes",
+            Description: "Context shared during executive reviews.", ListVisible: false),
+        new CustomFieldDefinition("customer_marketing_case", "boolean", "Marketing case study ready",
+            Description: "The customer has approved participation in marketing collateral.", DefaultValue: false),
     };
 
     private static readonly IReadOnlyList<CustomFieldDefinition> DealFields = new[]
     {
-        new CustomFieldDefinition("competitive_risk", "select", "Competitive risk", Options: new[] { "low", "medium", "high" }),
-        new CustomFieldDefinition("implementation_complexity", "select", "Implementation complexity", Options: new[] { "light", "standard", "complex" }),
-        new CustomFieldDefinition("estimated_seats", "integer", "Estimated seats/licenses"),
-        new CustomFieldDefinition("requires_legal_review", "boolean", "Requires legal review"),
+        new CustomFieldDefinition("competitive_risk", "select", "Competitive risk", Options: new[] { "low", "medium", "high" },
+            Description: "Perceived threat level from competitors.", Filterable: true),
+        new CustomFieldDefinition("implementation_complexity", "select", "Implementation complexity", Options: new[] { "light", "standard", "complex" },
+            Description: "Expected level of effort for delivery."),
+        new CustomFieldDefinition("estimated_seats", "integer", "Estimated seats/licenses",
+            Description: "Projected seat count for the opportunity.", Filterable: true),
+        new CustomFieldDefinition("requires_legal_review", "boolean", "Requires legal review",
+            Description: "Deal includes terms that need legal approval.", DefaultValue: false),
     };
 
     private static readonly IReadOnlyList<CustomFieldDefinition> ActivityFields = new[]
     {
-        new CustomFieldDefinition("engagement_sentiment", "select", "Engagement sentiment", Options: new[] { "positive", "neutral", "negative" }),
-        new CustomFieldDefinition("shared_with_leadership", "boolean", "Shared with leadership"),
-        new CustomFieldDefinition("follow_up_owner", "text", "Follow-up owner"),
+        new CustomFieldDefinition("engagement_sentiment", "select", "Engagement sentiment", Options: new[] { "positive", "neutral", "negative" },
+            Description: "Tone of the interaction based on the latest touchpoint.", Filterable: true),
+        new CustomFieldDefinition("shared_with_leadership", "boolean", "Shared with leadership",
+            Description: "Activity summary was shared with leadership or executives.", DefaultValue: false),
+        new CustomFieldDefinition("follow_up_owner", "text", "Follow-up owner",
+            Description: "Team member responsible for the next follow-up."),
     };
 
     // -------------------------------------------------------------------------------------------
