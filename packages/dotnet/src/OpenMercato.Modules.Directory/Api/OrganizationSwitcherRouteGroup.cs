@@ -53,7 +53,21 @@ public sealed class OrganizationSwitcherRouteGroup : IDirectoryRouteGroup
                     .Select(t => (object)new { id = t.Id.ToString(), name = t.Name, isActive = t.IsActive }).ToList()
                 : new List<object>();
 
-            var tenantId = auth.TenantId;
+            // Effective tenant: super-admins may switch via ?tenantId= or the om_selected_tenant cookie
+            // (validated against an existing tenant); everyone else is pinned to their token tenant.
+            // Mirrors upstream requestedTenantId = query ?? cookie. (OM integration test TC-DIR-004.)
+            var actorTenantId = auth.TenantId;
+            var rawTenant = http.Request.Query["tenantId"].ToString();
+            Guid? tenantId = actorTenantId;
+            if (isSuperAdmin)
+            {
+                string? requested = !string.IsNullOrWhiteSpace(rawTenant) && rawTenant != "__all__" ? rawTenant : null;
+                if (requested is null && http.Request.Cookies.TryGetValue("om_selected_tenant", out var ck) && !string.IsNullOrWhiteSpace(ck))
+                    requested = ck;
+                if (Guid.TryParse(requested, out var rg)
+                    && await db.Set<Tenant>().AsNoTracking().AnyAsync(t => t.Id == rg && t.DeletedAt == null))
+                    tenantId = rg;
+            }
             if (tenantId is not { } tid)
                 return Results.Json(new { items = Array.Empty<object>(), selectedId = (string?)null, canManage = false, tenantId = (string?)null, tenants, isSuperAdmin });
 
@@ -63,9 +77,12 @@ public sealed class OrganizationSwitcherRouteGroup : IDirectoryRouteGroup
                 orgs.Select(o => new OrgHierarchyInput(o.Id.ToString(), o.ParentId?.ToString(), o.Name, o.IsActive)),
                 tid.ToString());
 
-            var rawTenant = http.Request.Query["tenantId"].ToString();
-            var selectedId = auth.OrganizationId?.ToString();
-            if (string.Equals(rawTenant, "__all__", StringComparison.Ordinal)) selectedId = null;
+            // Selection: om_selected_org=__all__ (or ?tenantId=__all__) clears; otherwise the actor's org
+            // only applies when the effective tenant is still the actor's own tenant.
+            var selectedOrgCookie = http.Request.Cookies.TryGetValue("om_selected_org", out var so) ? so : null;
+            string? selectedId = (actorTenantId == tenantId) ? auth.OrganizationId?.ToString() : null;
+            if (string.Equals(rawTenant, "__all__", StringComparison.Ordinal)
+                || string.Equals(selectedOrgCookie, "__all__", StringComparison.Ordinal)) selectedId = null;
 
             object BuildNode(ComputedOrganizationNode n) => new
             {
