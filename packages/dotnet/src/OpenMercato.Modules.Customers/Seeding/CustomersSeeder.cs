@@ -71,13 +71,20 @@ public static class CustomersSeeder
 
     private static DictSeed[] Seeds(params string[] values) => values.Select(v => new DictSeed(v)).ToArray();
 
+    /// <summary>Build a bare-key custom-field value map (the <c>custom</c> block of an upstream example
+    /// record). Values are native CLR types (string/bool/int) — <see cref="RecordCustomFields.SetAsync"/>
+    /// routes each to its storage column from the installed def's kind.</summary>
+    private static Dictionary<string, object?> Cf(params (string Key, object? Value)[] pairs) =>
+        pairs.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+
     /// <summary>An example person (upstream <c>CUSTOMER_EXAMPLES[].people[]</c>). Contact fields are the exact
     /// OM values: <c>Email</c>/<c>Phone</c> land on the person's <see cref="CustomerEntity"/> (primary_email/
     /// primary_phone — what the people LIST reads); job/department/seniority/timezone/linkedIn/preferredName land
     /// on the <see cref="CustomerPersonProfile"/>; <c>Source</c> on the entity.</summary>
     private readonly record struct PersonSeed(
         string First, string Last, string? PreferredName, string Email, string Phone,
-        string JobTitle, string Department, string Seniority, string Timezone, string LinkedInUrl, string Source);
+        string JobTitle, string Department, string Seniority, string Timezone, string LinkedInUrl, string Source,
+        IReadOnlyDictionary<string, object?> Custom);
 
     /// <summary>An example company (upstream <c>CUSTOMER_EXAMPLES[]</c>). Contact/identity fields are the exact
     /// OM values: <c>PrimaryEmail</c>/<c>PrimaryPhone</c>/<c>Source</c>/<c>Description</c> land on the
@@ -86,7 +93,7 @@ public static class CustomersSeeder
     private readonly record struct CompanySeed(
         string Company, string Industry, string Lifecycle, string PrimaryEmail, string PrimaryPhone,
         string Source, string Description, string LegalName, string Domain, string WebsiteUrl, string SizeBucket,
-        PersonSeed[] People);
+        IReadOnlyDictionary<string, object?> Custom, PersonSeed[] People);
 
     private static readonly CompanySeed[] Examples =
     {
@@ -94,40 +101,55 @@ public static class CustomersSeeder
             "hello@brightsidesolar.com", "+1 415-555-0148", "partner_referral",
             "Community solar developer helping multifamily buildings reduce energy costs across California.",
             "Brightside Solar LLC", "brightsidesolar.com", "https://brightsidesolar.com", "51-200",
+            Cf(("relationship_health", "healthy"), ("renewal_quarter", "Q3"),
+                ("executive_notes", "High NPS across HOA portfolio; exploring bundled battery upsell for 2025 budgets."),
+                ("customer_marketing_case", true)),
             new[]
             {
                 new PersonSeed("Mia", "Johnson", "Mia", "mia.johnson@brightsidesolar.com", "+1 415-555-0162",
                     "Director of Operations", "Operations", "director", "America/Los_Angeles",
-                    "https://www.linkedin.com/in/miajohnson-operations/", "partner_referral"),
+                    "https://www.linkedin.com/in/miajohnson-operations/", "partner_referral",
+                    Cf(("buying_role", "champion"), ("preferred_pronouns", "she/her"), ("newsletter_opt_in", true))),
                 new PersonSeed("Daniel", "Cho", null, "daniel.cho@brightsidesolar.com", "+1 628-555-0199",
                     "VP of Partnerships", "Business Development", "vp", "America/Los_Angeles",
-                    "https://www.linkedin.com/in/danielcho-energy/", "outbound_campaign"),
+                    "https://www.linkedin.com/in/danielcho-energy/", "outbound_campaign",
+                    Cf(("buying_role", "economic_buyer"), ("preferred_pronouns", "he/him"), ("newsletter_opt_in", false))),
             }),
         new("Harborview Analytics", "Software", "prospect",
             "info@harborviewanalytics.com", "+1 617-555-0024", "industry_event",
             "Boston-based analytics platform helping consumer brands optimize merchandising decisions.",
             "Harborview Analytics Inc.", "harborviewanalytics.com", "https://harborviewanalytics.com", "201-500",
+            Cf(("relationship_health", "monitor"), ("renewal_quarter", "Q4"),
+                ("executive_notes", "Pilot success metrics trending positive; CFO wants ROI modeling before expansion."),
+                ("customer_marketing_case", false)),
             new[]
             {
                 new PersonSeed("Arjun", "Patel", null, "arjun.patel@harborviewanalytics.com", "+1 617-555-0168",
                     "Chief Revenue Officer", "Revenue", "c-level", "America/New_York",
-                    "https://www.linkedin.com/in/arjunpatel-sales/", "industry_event"),
+                    "https://www.linkedin.com/in/arjunpatel-sales/", "industry_event",
+                    Cf(("buying_role", "economic_buyer"), ("preferred_pronouns", "he/him"), ("newsletter_opt_in", true))),
                 new PersonSeed("Lena", "Ortiz", null, "lena.ortiz@harborviewanalytics.com", "+1 617-555-0179",
                     "Director of Retail Partnerships", "Partnerships", "director", "America/New_York",
-                    "https://www.linkedin.com/in/lenaortiz-retail/", "industry_event"),
+                    "https://www.linkedin.com/in/lenaortiz-retail/", "industry_event",
+                    Cf(("buying_role", "champion"), ("preferred_pronouns", "she/her"), ("newsletter_opt_in", true))),
             }),
         new("Copperleaf Design Co.", "Interior Design", "customer",
             "studio@copperleaf.design", "+1 512-555-0456", "customer_referral",
             "Boutique interior design studio specializing in hospitality and boutique retail projects across Texas.",
             "Copperleaf Design Company", "copperleaf.design", "https://copperleaf.design", "11-50",
+            Cf(("relationship_health", "healthy"), ("renewal_quarter", "Q1"),
+                ("executive_notes", "Boutique studio with strong referrals; share sustainability case studies with ownership group."),
+                ("customer_marketing_case", true)),
             new[]
             {
                 new PersonSeed("Taylor", "Brooks", null, "taylor.brooks@copperleaf.design", "+1 512-555-0489",
                     "Founder & Principal", "Leadership", "c-level", "America/Chicago",
-                    "https://www.linkedin.com/in/taylorbrooks-design/", "customer_referral"),
+                    "https://www.linkedin.com/in/taylorbrooks-design/", "customer_referral",
+                    Cf(("buying_role", "economic_buyer"), ("preferred_pronouns", "they/them"), ("newsletter_opt_in", false))),
                 new PersonSeed("Naomi", "Harris", null, "naomi.harris@copperleaf.design", "+1 512-555-0521",
                     "Senior Project Manager", "Projects", "manager", "America/Chicago",
-                    "https://www.linkedin.com/in/naomiharris-pm/", "customer_referral"),
+                    "https://www.linkedin.com/in/naomiharris-pm/", "customer_referral",
+                    Cf(("buying_role", "influencer"), ("preferred_pronouns", "she/her"), ("newsletter_opt_in", true))),
             }),
     };
 
@@ -155,7 +177,8 @@ public static class CustomersSeeder
     /// compute <c>DateTimeOffset.UtcNow.AddDays(n)</c> rather than hardcode a date.</summary>
     private readonly record struct DealSeed(
         string Title, string Description, string Status, string StageValue, decimal ValueAmount,
-        string ValueCurrency, int Probability, int ExpectedCloseDays, string Source, DealParticipant[] People);
+        string ValueCurrency, int Probability, int ExpectedCloseDays, string Source,
+        IReadOnlyDictionary<string, object?> Custom, DealParticipant[] People);
 
     /// <summary>The 2 deals per company (6 total) from <c>CUSTOMER_EXAMPLES</c>.</summary>
     private static readonly (string Company, DealSeed[] Deals)[] ExampleDeals =
@@ -164,27 +187,33 @@ public static class CustomersSeeder
         {
             new DealSeed("Redwood Residences Solar Rollout", "40-home solar installation with ongoing maintenance plan.",
                 "in_progress", "negotiations", 185000m, "USD", 55, 45, "partner_referral",
+                Cf(("competitive_risk", "medium"), ("implementation_complexity", "standard"), ("estimated_seats", 40), ("requires_legal_review", true)),
                 new[] { new DealParticipant("Mia Johnson", "Project Sponsor"), new DealParticipant("Daniel Cho", "Executive Sponsor") }),
             new DealSeed("Sunset Lofts Battery Upgrade", "Battery upgrade for existing solar customers to extend overnight coverage.",
                 "open", "offering", 82000m, "USD", 40, 65, "inbound_web",
+                Cf(("competitive_risk", "high"), ("implementation_complexity", "complex"), ("estimated_seats", 28), ("requires_legal_review", false)),
                 new[] { new DealParticipant("Mia Johnson", "Point of Contact") }),
         }),
         ("Harborview Analytics", new[]
         {
             new DealSeed("Blue Harbor Grocers Pilot Program", "Six-month pilot of merchandising analytics across 28 locations.",
                 "win", "win", 96000m, "USD", 100, -25, "industry_event",
+                Cf(("competitive_risk", "low"), ("implementation_complexity", "standard"), ("estimated_seats", 28), ("requires_legal_review", false)),
                 new[] { new DealParticipant("Arjun Patel", "Executive Sponsor"), new DealParticipant("Lena Ortiz", "Account Lead") }),
             new DealSeed("Midwest Outfitters Expansion", "Expansion opportunity covering 120 stores in the Midwest region.",
                 "open", "opportunity", 210000m, "USD", 35, 120, "outbound_campaign",
+                Cf(("competitive_risk", "medium"), ("implementation_complexity", "complex"), ("estimated_seats", 120), ("requires_legal_review", true)),
                 new[] { new DealParticipant("Lena Ortiz", "Account Lead") }),
         }),
         ("Copperleaf Design Co.", new[]
         {
             new DealSeed("Wanderstay Boutique Renovation", "Full lobby and guest suite redesign for the Wanderstay hospitality group.",
                 "in_progress", "sales_qualified_lead", 145000m, "USD", 65, 35, "customer_referral",
+                Cf(("competitive_risk", "medium"), ("implementation_complexity", "complex"), ("estimated_seats", 12), ("requires_legal_review", true)),
                 new[] { new DealParticipant("Taylor Brooks", "Principal Designer"), new DealParticipant("Naomi Harris", "Project Lead") }),
             new DealSeed("Cedar Creek Retreat Expansion", "New wellness center build-out including retail area and treatment rooms.",
                 "loose", "loose", 98000m, "USD", 0, -70, "customer_referral",
+                Cf(("competitive_risk", "high"), ("implementation_complexity", "standard"), ("estimated_seats", 8), ("requires_legal_review", false)),
                 new[] { new DealParticipant("Taylor Brooks", "Principal Designer") }),
         }),
     };
@@ -308,6 +337,9 @@ public static class CustomersSeeder
                 WebsiteUrl = ex.WebsiteUrl, SizeBucket = ex.SizeBucket, CreatedAt = now, UpdatedAt = now,
             });
             await db.SaveChangesAsync(ct);
+            // Custom-field VALUES (upstream company.custom) — written to custom_field_values (EAV, not
+            // encrypted) BEFORE indexing so the projected query-index doc carries the cf_* keys the list reads.
+            await RecordCustomFields.SetAsync(db, CustomerWriteHelpers.CompanyEntityType, company.Id.ToString(), tenantId, organizationId, ex.Custom, ct);
             await indexer.UpsertOneAsync(CustomerWriteHelpers.CompanyEntityType, company.Id.ToString(), organizationId, tenantId, "create", ct);
             companyIdByName[ex.Company] = company.Id;
             seeded++;
@@ -340,6 +372,9 @@ public static class CustomersSeeder
                     PersonEntityId = person.Id, CompanyEntityId = company.Id, IsPrimary = true, CreatedAt = now, UpdatedAt = now,
                 });
                 await db.SaveChangesAsync(ct);
+                // Custom-field VALUES (upstream person.custom: buying_role/preferred_pronouns/newsletter_opt_in) —
+                // written before indexing so the projected doc carries the cf_* keys the people list reads.
+                await RecordCustomFields.SetAsync(db, CustomerWriteHelpers.PersonEntityType, person.Id.ToString(), tenantId, organizationId, p.Custom, ct);
                 await indexer.UpsertOneAsync(CustomerWriteHelpers.PersonEntityType, person.Id.ToString(), organizationId, tenantId, "create", ct);
                 personIdByName[personName] = person.Id;
                 seeded++;
@@ -405,14 +440,17 @@ public static class CustomersSeeder
                     });
                 }
                 await db.SaveChangesAsync(ct);
+                // Custom-field VALUES (upstream deal.custom: competitive_risk/implementation_complexity/
+                // estimated_seats/requires_legal_review) — written before indexing so the projected doc carries
+                // the cf_* keys the deals list reads.
+                await RecordCustomFields.SetAsync(db, DealWriteHelpers.DealEntityType, deal.Id.ToString(), tenantId, organizationId, d.Custom, ct);
                 await indexer.UpsertOneAsync(DealWriteHelpers.DealEntityType, deal.Id.ToString(), organizationId, tenantId, "create", ct);
                 seeded++;
 
-                // PARITY-TODO: upstream also seeds per-deal activities (CustomerActivity) and per-deal/entity
-                // custom-field VALUES (dealInfo.custom / activity.custom) via the entities data engine, plus
-                // company/person interactions, notes (CustomerComment) and addresses (CustomerAddress). These
-                // are lower priority than deals+pipeline+links and the custom-field values need the entities
-                // codec; port them in a follow-up.
+                // PARITY-TODO: upstream also seeds per-deal activities (CustomerActivity) and activity.custom
+                // custom-field VALUES via the entities data engine, plus company/person interactions, notes
+                // (CustomerComment) and addresses (CustomerAddress). These are lower priority than
+                // deals+pipeline+links; port them in a follow-up.
             }
         }
 

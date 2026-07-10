@@ -3,3 +3,4 @@ package-lock.json
 *.png
 enriched-check.mjs
 sidebar-check.mjs
+cf-check.mjs

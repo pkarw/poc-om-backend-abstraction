@@ -9,6 +9,7 @@ using OpenMercato.Modules.Customers;
 using OpenMercato.Modules.Customers.Data;
 using OpenMercato.Modules.Customers.Seeding;
 using OpenMercato.Modules.Entities;
+using OpenMercato.Modules.Entities.Lib;
 using OpenMercato.Modules.QueryIndex;
 using Xunit;
 
@@ -81,6 +82,29 @@ public class CustomersSeederTests
         Assert.Contains(await db.Set<CustomerDeal>().Select(d => d.Title).ToListAsync(),
             t => t == "Redwood Residences Solar Rollout");
 
+        // Custom-field VALUES are seeded (upstream *.custom blocks) so the list cf_* columns render real data.
+        var miaId = (await db.Set<CustomerEntity>()
+            .Where(e => e.Kind == "person" && e.TenantId == Tenant && e.DeletedAt == null).ToListAsync())
+            .Single(e => e.DisplayName == "Mia Johnson").Id.ToString();
+        var miaCf = (await RecordCustomFields.LoadAsync(db, "customers:customer_person_profile", new[] { miaId }, Tenant, Org))[miaId];
+        Assert.Equal("champion", miaCf["buying_role"]);
+        Assert.Equal(true, miaCf["newsletter_opt_in"]);
+
+        var brightsideId = (await db.Set<CustomerEntity>()
+            .Where(e => e.Kind == "company" && e.TenantId == Tenant && e.DeletedAt == null).ToListAsync())
+            .Single(e => e.DisplayName == "Brightside Solar").Id.ToString();
+        var brightsideCf = (await RecordCustomFields.LoadAsync(db, "customers:customer_company_profile", new[] { brightsideId }, Tenant, Org))[brightsideId];
+        Assert.Equal("healthy", brightsideCf["relationship_health"]);
+        Assert.Equal(true, brightsideCf["customer_marketing_case"]);
+
+        var redwoodId = (await db.Set<CustomerDeal>()
+            .Where(d => d.TenantId == Tenant && d.DeletedAt == null).ToListAsync())
+            .Single(d => d.Title == "Redwood Residences Solar Rollout").Id.ToString();
+        var redwoodCf = (await RecordCustomFields.LoadAsync(db, "customers:customer_deal", new[] { redwoodId }, Tenant, Org))[redwoodId];
+        Assert.Equal("medium", redwoodCf["competitive_risk"]);
+        Assert.Equal(40, Convert.ToInt32(redwoodCf["estimated_seats"]));
+        Assert.Equal(true, redwoodCf["requires_legal_review"]);
+
         // Idempotent: a second full run adds nothing.
         await CustomersSeeder.SeedDefaultsAsync(db, registry, Tenant, Org);
         await CustomersSeeder.SeedExamplesAsync(db, registry, indexer, Tenant, Org);
@@ -88,5 +112,8 @@ public class CustomersSeederTests
         Assert.Equal(8, await db.Set<CustomerPipelineStage>().CountAsync(s => s.PipelineId == defaultPipeline.Id));
         Assert.Equal(6, await db.Set<CustomerDeal>().CountAsync(d => d.TenantId == Tenant && d.DeletedAt == null));
         Assert.Equal(6, await db.Set<CustomerDealCompanyLink>().CountAsync());
+        // cf values not duplicated on re-run (record was skipped, so SetAsync never re-ran).
+        var miaCf2 = (await RecordCustomFields.LoadAsync(db, "customers:customer_person_profile", new[] { miaId }, Tenant, Org))[miaId];
+        Assert.Equal("champion", miaCf2["buying_role"]);
     }
 }

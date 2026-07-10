@@ -80,8 +80,12 @@ public sealed class EntitiesCrudCustomFields : ICrudCustomFields
         var customFields = new List<object>();
         foreach (var (key, value) in values)
         {
-            // Merge the value under its BARE name so `{ priority: 3 }` is directly on the record.
+            // Merge the value under its BARE name so `{ priority: 3 }` is directly on the record, AND under
+            // the `cf_<key>` name that upstream DataTables read (frontend mapApiItem collects `cf_*` keys —
+            // e.g. the people list "Buying role" column reads `cf_buying_role`). Both are emitted (additive)
+            // so bare-key readers keep working.
             item[key] = value;
+            item["cf_" + key] = value;
             customValues[key] = value;
             defs.TryGetValue(key, out var def);
             customFields.Add(new
