@@ -27,11 +27,13 @@ public sealed class SidebarPreferencesRoutes : IAuthRouteGroup
         routes.MapDelete("/api/auth/sidebar/preferences", DeleteAsync).RequireFeatures(FeatureManage);
     }
 
-    private static async Task<IResult> GetAsync(HttpContext http)
+    // NOTE: these handlers MUST take at least one DI parameter besides HttpContext. A minimal-API
+    // handler whose only parameter is HttpContext is bound as a RequestDelegate, and its returned
+    // IResult is then IGNORED (the response comes back 200 with no body and no content-type). That
+    // silently blanked every sidebar response. (OM integration test TC-AUTH-023.)
+    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db, IRbacService rbac)
     {
         var auth = HttpContextAuth.Current(http)!;
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
-        var rbac = http.RequestServices.GetRequiredService<IRbacService>();
         var svc = new SidebarPreferencesService(db);
         var locale = SidebarLocale.Resolve(http);
 
@@ -81,11 +83,9 @@ public sealed class SidebarPreferencesRoutes : IAuthRouteGroup
         });
     }
 
-    private static async Task<IResult> PutAsync(HttpContext http)
+    private static async Task<IResult> PutAsync(HttpContext http, AppDbContext db, IRbacService rbac)
     {
         var auth = HttpContextAuth.Current(http)!;
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
-        var rbac = http.RequestServices.GetRequiredService<IRbacService>();
         var svc = new SidebarPreferencesService(db);
 
         var body = await SidebarHttp.ReadJsonAsync(http);
@@ -214,11 +214,9 @@ public sealed class SidebarPreferencesRoutes : IAuthRouteGroup
         });
     }
 
-    private static async Task<IResult> DeleteAsync(HttpContext http)
+    private static async Task<IResult> DeleteAsync(HttpContext http, AppDbContext db, IRbacService rbac)
     {
         var auth = HttpContextAuth.Current(http)!;
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
-        var rbac = http.RequestServices.GetRequiredService<IRbacService>();
         var svc = new SidebarPreferencesService(db);
 
         var roleIdParam = http.Request.Query["roleId"].ToString();

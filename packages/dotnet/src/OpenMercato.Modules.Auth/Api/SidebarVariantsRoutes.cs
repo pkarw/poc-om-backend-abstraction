@@ -24,10 +24,11 @@ public sealed class SidebarVariantsRoutes : IAuthRouteGroup
         routes.MapPost("/api/auth/sidebar/variants", PostAsync).RequireFeatures(FeatureManage);
     }
 
-    private static async Task<IResult> GetAsync(HttpContext http)
+    // Must take a DI parameter besides HttpContext: a lone-HttpContext handler is bound as a
+    // RequestDelegate and its returned IResult is ignored (blank 200). See SidebarPreferencesRoutes.
+    private static async Task<IResult> GetAsync(HttpContext http, AppDbContext db)
     {
         var auth = HttpContextAuth.Current(http)!;
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
         var svc = new SidebarPreferencesService(db);
         var locale = SidebarLocale.Resolve(http);
 
@@ -41,10 +42,9 @@ public sealed class SidebarVariantsRoutes : IAuthRouteGroup
         });
     }
 
-    private static async Task<IResult> PostAsync(HttpContext http)
+    private static async Task<IResult> PostAsync(HttpContext http, AppDbContext db)
     {
         var auth = HttpContextAuth.Current(http)!;
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
         var svc = new SidebarPreferencesService(db);
 
         // Malformed / empty body is tolerated: treated as {} → creates an auto-named default variant.
