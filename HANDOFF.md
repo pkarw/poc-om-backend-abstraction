@@ -62,4 +62,16 @@ Make the .NET port's customers experience work 1:1 with Open Mercato in the test
   - **interaction validation**: reject present-but-empty date/time (TC-CRM-053 green).
   - **entity-link pickers**: index list skips the relational `excludeLinked*Id` params (were zeroing the picker to blank). TC-CRM-005.
   - REMAINING (harder, mostly client-side/feature-completeness): edit-persist website inline (003), deals list **association filters** personId/companyId applied as doc `=` and zeroing results (046/047), DataTable sort/column-chooser/bulk-dep-toast (029/032/065), company changelog tab + delete-undo nav (035/017), roles section text (045), search/filter (015), pipeline nav (013), create-deal-redesign (071). The deals association-filter one is the same class as the picker fix (relational params vs doc filters) — the proper fix resolves person/company link ids and restricts, rather than just skipping.
+- **Task H, wave 4 (more customers browser fixes)**: after wave 3, deployed dict-labels+undo+picker → **94/113 test cases pass** (38/50 distinct specs). Then landed the relational **association-filter** mechanism (`CrudConfig.ResolveListRestrictIds` → `CrudListQuery.RestrictIds` → `QueryIndexRequest.RestrictRecordIds`); deals `?personId=/?companyId=` now narrow correctly (verified: linked→1, unlinked→0), fixing TC-CRM-046's association case. **Remaining ~11 distinct specs** (each its own investigation, several NOT pure-.NET):
+  - `003` edit-persist website inline (client-side re-render after sequential inline saves; API persists+returns correctly).
+  - `005` link save-flow: the company picker now populates (fixed), but the subsequent Save PUT doesn't fire in the test (client interaction).
+  - `015` search+filter (companies by name/email + status/lifecycle/tag).
+  - `017` delete+undo: undo works, but the restored company doesn't reappear in the index-backed list → **CommandBus.Undo should re-index the restored entity** (the CRUD factory indexes on write; undo bypasses it). Real .NET fix.
+  - `029` DataTable name sort (index sort field vs doc field — needs sort-field mapping like the filter one; note the seeded people get bulk-deleted by TC-CRM-065, so verify on a fresh seed).
+  - `032` DataTable column-chooser / Views sidebar (OM frontend feature).
+  - `035` company changelog tab → needs the **audit_logs list route** (`/api/audit_logs/audit-logs/actions` list) ported.
+  - `045` roles section "Roles at {company}" text.
+  - `046b`/`047` **advanced-tree** filters (a separate filter mechanism from the association ids).
+  - `065` people bulk-delete dependency toast ("linked deals").
+  - `071` create-deal redesigned page.
 - **NOTE**: the OM checkout at `/mnt/c/Users/pkarw/Projects/open-mercato` is now on a DETACHED HEAD at `adc9da27` (its prior `.ai/*` edits are stashed: `git -C <OM> stash list`). Keep it there for testbench parity, or `git checkout release/v0.5.0 && git stash pop` to restore. Out of scope for the API parity: TC-ADMIN-012 (api_keys not ported).
