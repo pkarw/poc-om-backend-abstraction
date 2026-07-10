@@ -20,6 +20,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mercato}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Provision the enterprise record_locks schema OM's core migrate skips (see the SQL header).
+      - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mercato} -d ${POSTGRES_DB:-mercato}"]
       interval: 5s
