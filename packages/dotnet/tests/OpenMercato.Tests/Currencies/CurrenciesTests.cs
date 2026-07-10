@@ -269,14 +269,14 @@ public class CurrenciesTests
             db.Set<Currency>().Add(NewCurrency("PLN", "Polish Zloty"));
         });
 
-        var res = await h.Client.GetAsync("/api/currencies");
+        var res = await h.Client.GetAsync("/api/currencies/currencies");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         var body = await ReadJson(res);
         Assert.Equal(3, body.GetProperty("total").GetInt32());
         var codes = body.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("code").GetString()).ToArray();
         Assert.Equal(new[] { "EUR", "PLN", "USD" }, codes); // default sort code ASC
 
-        var baseOnly = await ReadJson(await h.Client.GetAsync("/api/currencies?isBase=true"));
+        var baseOnly = await ReadJson(await h.Client.GetAsync("/api/currencies/currencies?isBase=true"));
         Assert.Equal(1, baseOnly.GetProperty("total").GetInt32());
         Assert.Equal("USD", baseOnly.GetProperty("items")[0].GetProperty("code").GetString());
     }
@@ -286,7 +286,7 @@ public class CurrenciesTests
     {
         await using var h = await BuildAsync();
 
-        var res = await h.Client.PostAsync("/api/currencies",
+        var res = await h.Client.PostAsync("/api/currencies/currencies",
             new StringContent("{\"code\":\"eur\",\"name\":\"Euro\",\"symbol\":\"€\"}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         var id = (await ReadJson(res)).GetProperty("id").GetString();
@@ -294,10 +294,10 @@ public class CurrenciesTests
         Assert.Contains("currencies.currency.created", h.Events.Published);
 
         // Code is normalized to upper-case on the persisted row.
-        var list = await ReadJson(await h.Client.GetAsync("/api/currencies"));
+        var list = await ReadJson(await h.Client.GetAsync("/api/currencies/currencies"));
         Assert.Equal("EUR", list.GetProperty("items")[0].GetProperty("code").GetString());
 
-        var dup = await h.Client.PostAsync("/api/currencies",
+        var dup = await h.Client.PostAsync("/api/currencies/currencies",
             new StringContent("{\"code\":\"EUR\",\"name\":\"Euro 2\"}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Conflict, dup.StatusCode);
     }
@@ -306,7 +306,7 @@ public class CurrenciesTests
     public async Task Create_currency_with_invalid_code_returns_400()
     {
         await using var h = await BuildAsync();
-        var res = await h.Client.PostAsync("/api/currencies",
+        var res = await h.Client.PostAsync("/api/currencies/currencies",
             new StringContent("{\"code\":\"EURO\",\"name\":\"Euro\"}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var body = await ReadJson(res);
@@ -319,11 +319,11 @@ public class CurrenciesTests
         Currency usd = NewCurrency("USD", "US Dollar", isBase: true);
         await using var h = await BuildAsync(seed: db => db.Set<Currency>().Add(usd));
 
-        var res = await h.Client.PostAsync("/api/currencies",
+        var res = await h.Client.PostAsync("/api/currencies/currencies",
             new StringContent("{\"code\":\"EUR\",\"name\":\"Euro\",\"isBase\":true}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
 
-        var list = await ReadJson(await h.Client.GetAsync("/api/currencies?isBase=true"));
+        var list = await ReadJson(await h.Client.GetAsync("/api/currencies/currencies?isBase=true"));
         Assert.Equal(1, list.GetProperty("total").GetInt32());
         Assert.Equal("EUR", list.GetProperty("items")[0].GetProperty("code").GetString());
     }
@@ -334,7 +334,7 @@ public class CurrenciesTests
         Currency usd = NewCurrency("USD", "US Dollar", isBase: true);
         await using var h = await BuildAsync(seed: db => db.Set<Currency>().Add(usd));
 
-        var res = await h.Client.DeleteAsync($"/api/currencies?id={usd.Id}");
+        var res = await h.Client.DeleteAsync($"/api/currencies/currencies?id={usd.Id}");
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Contains("base currency", (await ReadJson(res)).GetProperty("error").GetString());
     }
@@ -351,7 +351,7 @@ public class CurrenciesTests
             SeedRate(db, "EUR", "USD", 1.1m, TodayUtcMidnight());
         });
 
-        var blocked = await h.Client.DeleteAsync($"/api/currencies?id={eur.Id}");
+        var blocked = await h.Client.DeleteAsync($"/api/currencies/currencies?id={eur.Id}");
         Assert.Equal(HttpStatusCode.BadRequest, blocked.StatusCode);
         Assert.Contains("active exchange rate", (await ReadJson(blocked)).GetProperty("error").GetString());
     }
@@ -368,17 +368,17 @@ public class CurrenciesTests
         });
 
         var payload = "{\"fromCurrencyCode\":\"EUR\",\"toCurrencyCode\":\"USD\",\"rate\":\"1.10000000\",\"date\":\"2026-01-01T00:00:00Z\",\"source\":\"nbp\"}";
-        var res = await h.Client.PostAsync("/api/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
+        var res = await h.Client.PostAsync("/api/currencies/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         Assert.Contains("currencies.exchange_rate.created", h.Events.Published);
 
         // Duplicate (same pair+date+source) → 409.
-        var dup = await h.Client.PostAsync("/api/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
+        var dup = await h.Client.PostAsync("/api/currencies/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Conflict, dup.StatusCode);
 
         // Unknown currency → 400.
         var bad = "{\"fromCurrencyCode\":\"GBP\",\"toCurrencyCode\":\"USD\",\"rate\":\"1.2\",\"date\":\"2026-01-01T00:00:00Z\",\"source\":\"nbp\"}";
-        var badRes = await h.Client.PostAsync("/api/exchange-rates", new StringContent(bad, Encoding.UTF8, "application/json"));
+        var badRes = await h.Client.PostAsync("/api/currencies/exchange-rates", new StringContent(bad, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, badRes.StatusCode);
     }
 
@@ -387,7 +387,7 @@ public class CurrenciesTests
     {
         await using var h = await BuildAsync(seed: db => db.Set<Currency>().Add(NewCurrency("USD", "US Dollar", isBase: true)));
         var payload = "{\"fromCurrencyCode\":\"USD\",\"toCurrencyCode\":\"USD\",\"rate\":\"1\",\"date\":\"2026-01-01T00:00:00Z\",\"source\":\"nbp\"}";
-        var res = await h.Client.PostAsync("/api/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
+        var res = await h.Client.PostAsync("/api/currencies/exchange-rates", new StringContent(payload, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 
@@ -427,7 +427,7 @@ public class CurrenciesTests
     public async Task Unauthenticated_currencies_list_returns_401()
     {
         await using var h = await BuildAsync(requestContext: new StubRequestContext(authenticated: false));
-        var res = await h.Client.GetAsync("/api/currencies");
+        var res = await h.Client.GetAsync("/api/currencies/currencies");
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
     }
 }

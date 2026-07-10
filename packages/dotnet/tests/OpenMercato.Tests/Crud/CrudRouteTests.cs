@@ -403,8 +403,10 @@ public class CrudRouteTests
         var ok = await h.Client.GetAsync($"/api/test_crud/widgets?id={w.Id}");
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         var body = await ReadJson(ok);
-        Assert.Equal(w.Id.ToString(), body.GetProperty("id").GetString());
-        Assert.True(body.GetProperty("cfMerged").GetBoolean()); // detail decoration ran
+        // ?id= is a list filtered to one id → {items:[record],...} envelope (OM parity, not a bare record).
+        var item0 = body.GetProperty("items")[0];
+        Assert.Equal(w.Id.ToString(), item0.GetProperty("id").GetString());
+        Assert.True(item0.GetProperty("cfMerged").GetBoolean()); // detail decoration ran
 
         var miss = await h.Client.GetAsync($"/api/test_crud/widgets/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, miss.StatusCode);

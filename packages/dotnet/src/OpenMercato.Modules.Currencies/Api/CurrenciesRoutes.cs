@@ -28,13 +28,17 @@ public static class CurrenciesRoutes
         CrudRoute.Map(routes, ExchangeRateConfig());
         MapOptions(routes);
         MapConvert(routes);
+        MapFetchConfigs(routes);
     }
 
     // ---- /api/currencies ----------------------------------------------------------------------
 
     private static CrudConfig<Currency> CurrencyConfig() => new()
     {
-        BasePath = "currencies",
+        // Upstream mounts each resource under /api/<module>/<resource> — the currency CRUD lives at
+        // /api/currencies/currencies (NOT /api/currencies). This also matches the testbench proxy's
+        // /api/currencies/* matcher. (Caught by OM integration test TC-CUR-001.)
+        BasePath = "currencies/currencies",
         EntityType = "currencies:currency",
         ResourceKind = "currencies.currency",
         DefaultSortField = "code",
@@ -149,7 +153,7 @@ public static class CurrenciesRoutes
 
     private static CrudConfig<ExchangeRate> ExchangeRateConfig() => new()
     {
-        BasePath = "exchange-rates",
+        BasePath = "currencies/exchange-rates",
         EntityType = "currencies:exchange_rate",
         ResourceKind = "currencies.exchange_rate",
         // PARITY-TODO: upstream default order is `date DESC`; the factory GET defaults to ASC when no
@@ -315,6 +319,162 @@ public static class CurrenciesRoutes
             }, Web, statusCode: 200);
         }));
     }
+
+    // ---- /api/currencies/fetch-configs (port of api/fetch-configs/route.ts) -------------------
+    // Bespoke (non-CrudRoute) shape: GET → {configs:[...]}, POST/PUT → {config}, DELETE → {success:true}.
+
+    private static readonly string[] FetchProviders = { "NBP", "Raiffeisen Bank Polska", "Custom" };
+    private static readonly System.Text.RegularExpressions.Regex SyncTimeRe =
+        new(@"^([01]\d|2[0-3]):([0-5]\d)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static void MapFetchConfigs(IEndpointRouteBuilder routes)
+    {
+        // GET — list configs for the scope. Superadmin (no org) may read across the tenant.
+        routes.MapGet("/api/currencies/fetch-configs", (Func<HttpContext, Task<IResult>>)(async http =>
+        {
+            var (ctx, denied) = await AuthorizeAsync(http, new[] { "currencies.fetch.view" });
+            if (denied is not null) return denied;
+            if (ctx!.TenantId is not { } tenantId) return Results.Json(new { error = "Unauthorized" }, Web, statusCode: 401);
+
+            var db = http.RequestServices.GetRequiredService<Core.Data.AppDbContext>();
+            var query = db.Set<CurrencyFetchConfig>().AsNoTracking().Where(c => c.TenantId == tenantId);
+            if (ctx.OrganizationId is { } orgId) query = query.Where(c => c.OrganizationId == orgId);
+            var rows = await query.OrderBy(c => c.Provider).ToListAsync();
+            return Results.Json(new { configs = rows.Select(ProjectFetchConfig) }, Web, statusCode: 200);
+        }));
+
+        // POST — create; duplicate provider in scope → 400.
+        routes.MapPost("/api/currencies/fetch-configs", (Func<HttpContext, Task<IResult>>)(async http =>
+        {
+            var (ctx, denied) = await AuthorizeAsync(http, new[] { "currencies.fetch.view" });
+            if (denied is not null) return denied;
+            if (ctx!.TenantId is not { } tenantId || ctx.OrganizationId is not { } orgId)
+                return Results.Json(new { error = "Unauthorized" }, Web, statusCode: 401);
+
+            var body = await ReadBodyAsync(http);
+            if (body is null) return Results.Json(new { error = "Invalid JSON" }, Web, statusCode: 400);
+
+            var provider = GetStr(body.Value, "provider");
+            if (provider is null || Array.IndexOf(FetchProviders, provider) < 0)
+                return Results.Json(new { error = "Invalid provider" }, Web, statusCode: 400);
+            var syncTime = GetStr(body.Value, "syncTime");
+            if (syncTime is not null && !SyncTimeRe.IsMatch(syncTime))
+                return Results.Json(new { error = "Invalid time format. Use HH:MM" }, Web, statusCode: 400);
+
+            var db = http.RequestServices.GetRequiredService<Core.Data.AppDbContext>();
+            var dup = await db.Set<CurrencyFetchConfig>()
+                .AnyAsync(c => c.TenantId == tenantId && c.OrganizationId == orgId && c.Provider == provider);
+            if (dup) return Results.Json(new { error = $"Provider {provider} already configured" }, Web, statusCode: 400);
+
+            var now = DateTimeOffset.UtcNow;
+            var entity = new CurrencyFetchConfig
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                TenantId = tenantId,
+                Provider = provider,
+                IsEnabled = GetBool(body.Value, "isEnabled") ?? false,
+                SyncTime = syncTime,
+                Config = GetRawJson(body.Value, "config"),
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            db.Set<CurrencyFetchConfig>().Add(entity);
+            await db.SaveChangesAsync();
+            return Results.Json(new { config = ProjectFetchConfig(entity) }, Web, statusCode: 201);
+        }));
+
+        // PUT — update isEnabled/syncTime/config by id.
+        routes.MapPut("/api/currencies/fetch-configs", (Func<HttpContext, Task<IResult>>)(async http =>
+        {
+            var (ctx, denied) = await AuthorizeAsync(http, new[] { "currencies.fetch.view" });
+            if (denied is not null) return denied;
+            if (ctx!.TenantId is not { } tenantId || ctx.OrganizationId is not { } orgId)
+                return Results.Json(new { error = "Unauthorized" }, Web, statusCode: 401);
+
+            var body = await ReadBodyAsync(http);
+            if (body is null) return Results.Json(new { error = "Invalid JSON" }, Web, statusCode: 400);
+            if (GetStr(body.Value, "id") is not { } idStr || !Guid.TryParse(idStr, out var id))
+                return Results.Json(new { error = "ID required" }, Web, statusCode: 400);
+
+            var db = http.RequestServices.GetRequiredService<Core.Data.AppDbContext>();
+            var entity = await db.Set<CurrencyFetchConfig>()
+                .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId && c.OrganizationId == orgId);
+            if (entity is null) return Results.Json(new { error = "Fetch config not found" }, Web, statusCode: 400);
+
+            if (body.Value.TryGetProperty("isEnabled", out _)) entity.IsEnabled = GetBool(body.Value, "isEnabled") ?? entity.IsEnabled;
+            if (body.Value.TryGetProperty("syncTime", out _))
+            {
+                var syncTime = GetStr(body.Value, "syncTime");
+                if (syncTime is not null && !SyncTimeRe.IsMatch(syncTime))
+                    return Results.Json(new { error = "Invalid time format. Use HH:MM" }, Web, statusCode: 400);
+                entity.SyncTime = syncTime;
+            }
+            if (body.Value.TryGetProperty("config", out _)) entity.Config = GetRawJson(body.Value, "config");
+            entity.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            return Results.Json(new { config = ProjectFetchConfig(entity) }, Web, statusCode: 200);
+        }));
+
+        // DELETE ?id= — hard delete, returns {success:true}.
+        routes.MapDelete("/api/currencies/fetch-configs", (Func<HttpContext, Task<IResult>>)(async http =>
+        {
+            var (ctx, denied) = await AuthorizeAsync(http, new[] { "currencies.fetch.view" });
+            if (denied is not null) return denied;
+            if (ctx!.TenantId is not { } tenantId || ctx.OrganizationId is not { } orgId)
+                return Results.Json(new { error = "Unauthorized" }, Web, statusCode: 401);
+
+            if (First(http.Request.Query["id"]) is not { } idStr || !Guid.TryParse(idStr, out var id))
+                return Results.Json(new { error = "ID required" }, Web, statusCode: 400);
+
+            var db = http.RequestServices.GetRequiredService<Core.Data.AppDbContext>();
+            var entity = await db.Set<CurrencyFetchConfig>()
+                .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId && c.OrganizationId == orgId);
+            if (entity is null) return Results.Json(new { error = "Fetch config not found" }, Web, statusCode: 400);
+            db.Set<CurrencyFetchConfig>().Remove(entity);
+            await db.SaveChangesAsync();
+            return Results.Json(new { success = true }, Web, statusCode: 200);
+        }));
+    }
+
+    private static Dictionary<string, object?> ProjectFetchConfig(CurrencyFetchConfig c) => new()
+    {
+        ["id"] = c.Id.ToString(),
+        ["organizationId"] = c.OrganizationId.ToString(),
+        ["tenantId"] = c.TenantId.ToString(),
+        ["provider"] = c.Provider,
+        ["isEnabled"] = c.IsEnabled,
+        ["syncTime"] = c.SyncTime,
+        ["lastSyncAt"] = c.LastSyncAt?.ToUniversalTime().ToString("o"),
+        ["lastSyncStatus"] = c.LastSyncStatus,
+        ["lastSyncMessage"] = c.LastSyncMessage,
+        ["lastSyncCount"] = c.LastSyncCount,
+        ["config"] = c.Config is null ? null : JsonSerializer.Deserialize<JsonElement>(c.Config),
+        ["createdAt"] = c.CreatedAt.ToUniversalTime().ToString("o"),
+        ["updatedAt"] = c.UpdatedAt.ToUniversalTime().ToString("o"),
+    };
+
+    private static async Task<JsonElement?> ReadBodyAsync(HttpContext http)
+    {
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(http.Request.Body);
+            return doc.RootElement.Clone();
+        }
+        catch { return null; }
+    }
+
+    private static string? GetStr(JsonElement o, string key) =>
+        o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
+
+    private static bool? GetBool(JsonElement o, string key) =>
+        o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) &&
+        (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False) ? v.GetBoolean() : null;
+
+    private static string? GetRawJson(JsonElement o, string key) =>
+        o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) &&
+        v.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) ? v.GetRawText() : null;
 
     // ---- Auth bridge (mirrors CrudRoute.AuthorizeAsync for the non-factory endpoints) ---------
 

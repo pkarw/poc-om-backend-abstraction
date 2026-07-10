@@ -63,9 +63,15 @@ public static class CrudRoute
 
         var query = CrudListQueryParser.Parse(http.Request, config.DefaultSortField, config.DefaultPageSize, config.MaxPageSize);
 
-        // Single-item shortcut: GET /api/{base}?id=<uuid> returns the record (or 404).
+        // GET /api/{base}?id=<uuid> is a LIST filtered to one id — OM returns the standard
+        // {items,total,...} envelope (items:[record] or []), NOT a bare record. (The bare-record
+        // shape is only for the path form GET /api/{base}/{id}.) Caught by OM integration TC-CUR-001.
         if (query.SingleId is { } singleId)
-            return await FetchSingleAsync(http, config, ctx!, singleId, query.WithDeleted);
+        {
+            var one = await FetchSingleRecordAsync(http, config, ctx!, singleId, query.WithDeleted);
+            var oneItems = one is null ? new List<object>() : new List<object> { one };
+            return Json(CrudListQueryParser.BuildEnvelope(oneItems, oneItems.Count, query.Page, query.PageSize), 200);
+        }
 
         // Empty org scope → 200 empty envelope without touching the base table (spec 02 R27 / 03 R21).
         // Mirrors OM: even an export request on an empty scope returns the JSON envelope, not a file.
@@ -259,26 +265,35 @@ public static class CrudRoute
         return await FetchSingleAsync(http, config, ctx!, recordId, withDeleted);
     }
 
+    // Bare-record form: GET /api/{base}/{id} → the projected record, or 404.
     private static async Task<IResult> FetchSingleAsync<TEntity>(
+        HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, Guid recordId, bool withDeleted) where TEntity : class
+    {
+        var item = await FetchSingleRecordAsync(http, config, ctx, recordId, withDeleted);
+        return item is null ? Json(new { error = "Not found" }, 404) : Json(item, 200);
+    }
+
+    // Fetch + project a single record (or null), shared by the ?id= list-filter form and the path form.
+    private static async Task<IDictionary<string, object?>?> FetchSingleRecordAsync<TEntity>(
         HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, Guid recordId, bool withDeleted) where TEntity : class
     {
         var services = http.RequestServices;
         var db = services.GetRequiredService<AppDbContext>();
 
         if (config.OrgScoped && ctx.OrganizationIds is { Count: 0 })
-            return Json(new { error = "Not found" }, 404);
+            return null;
 
         var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
         q = ApplyScope(q, config, ctx, withDeleted);
         q = q.Where(BuildIdEqualsPredicate(config.IdSelector, recordId));
         var entity = await q.FirstOrDefaultAsync();
-        if (entity is null) return Json(new { error = "Not found" }, 404);
+        if (entity is null) return null;
 
         var project = config.ProjectDetail ?? config.ProjectItem;
         var item = project(entity);
         var customFields = services.GetRequiredService<ICrudCustomFields>();
         await customFields.MergeIntoDetailAsync(config.EntityType, item, ctx);
-        return Json(item, 200);
+        return item;
     }
 
     // ---- POST (create) ------------------------------------------------------------------------
