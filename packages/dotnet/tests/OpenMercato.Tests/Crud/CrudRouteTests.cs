@@ -215,11 +215,12 @@ public class CrudRouteTests
     private static readonly Guid Tenant = Guid.NewGuid();
     private static readonly Guid Org = Guid.NewGuid();
 
-    private static CrudConfig<Widget> WidgetConfig() => new()
+    private static CrudConfig<Widget> WidgetConfig(IReadOnlyList<string>? exportFormats = null) => new()
     {
         BasePath = "test_crud/widgets",
         EntityType = "test_crud:widget",
         ResourceKind = "test.widget",
+        ExportFormats = exportFormats,
         ListFeatures = new[] { "test.widget.view" },
         CreateFeatures = new[] { "test.widget.manage" },
         UpdateFeatures = new[] { "test.widget.manage" },
@@ -263,7 +264,7 @@ public class CrudRouteTests
         public async ValueTask DisposeAsync() { Client.Dispose(); await App.DisposeAsync(); }
     }
 
-    private static async Task<Harness> BuildAsync(StubRequestContext? requestContext = null, Action<AppDbContext>? seed = null)
+    private static async Task<Harness> BuildAsync(StubRequestContext? requestContext = null, Action<AppDbContext>? seed = null, CrudConfig<Widget>? config = null)
     {
         var events = new RecordingEventBus();
         var indexer = new RecordingIndexer();
@@ -286,7 +287,7 @@ public class CrudRouteTests
         builder.Services.AddSingleton<IEventBus>(events);
 
         var app = builder.Build();
-        CrudRoute.Map(app, WidgetConfig());
+        CrudRoute.Map(app, config ?? WidgetConfig());
 
         using (var scope = app.Services.CreateScope())
         {
@@ -529,5 +530,81 @@ public class CrudRouteTests
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
         var body = await ReadJson(res);
         Assert.Equal("Forbidden", body.GetProperty("error").GetString());
+    }
+
+    // ---- List export (?format=) ---------------------------------------------------------------
+
+    [Fact]
+    public async Task Export_csv_serializes_full_filtered_set_across_pages_with_attachment_headers()
+    {
+        // Seed more rows than one export batch would return in a single page is impractical here (batch=1000),
+        // but we assert the FULL set is exported regardless of the ?pageSize= the caller passes.
+        await using var h = await BuildAsync(seed: db =>
+        {
+            for (var i = 0; i < 7; i++) db.Set<Widget>().Add(NewWidget($"w{i:D2}"));
+        });
+
+        var res = await h.Client.GetAsync("/api/test_crud/widgets?format=csv&pageSize=2&sortField=name&sortDir=asc");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("text/csv; charset=utf-8", res.Content.Headers.ContentType!.ToString());
+        Assert.Equal("attachment; filename=\"widgets.csv\"", res.Content.Headers.GetValues("Content-Disposition").Single());
+
+        var body = await res.Content.ReadAsStringAsync();
+        var lines = body.Split('\n');
+        // Header (union of projected + cf keys, humanized) + 7 data rows despite pageSize=2.
+        Assert.Equal("Id,Name,CfMerged", lines[0]);
+        Assert.Equal(8, lines.Length);
+        Assert.Equal("w00", lines[1].Split(',')[1]);
+        Assert.Equal("w06", lines[7].Split(',')[1]);
+        // Custom-field decoration ran on the exported rows too.
+        Assert.All(lines[1..], l => Assert.EndsWith(",true", l));
+    }
+
+    [Fact]
+    public async Task Export_markdown_and_xml_and_json_content_types()
+    {
+        await using var h = await BuildAsync(seed: db => db.Set<Widget>().Add(NewWidget("solo")));
+
+        var md = await h.Client.GetAsync("/api/test_crud/widgets?format=md");
+        Assert.Equal("text/markdown; charset=utf-8", md.Content.Headers.ContentType!.ToString());
+        Assert.Equal("attachment; filename=\"widgets.md\"", md.Content.Headers.GetValues("Content-Disposition").Single());
+        Assert.StartsWith("| Id | Name | CfMerged |", await md.Content.ReadAsStringAsync());
+
+        var xml = await h.Client.GetAsync("/api/test_crud/widgets?format=xml");
+        Assert.Equal("application/xml; charset=utf-8", xml.Content.Headers.ContentType!.ToString());
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>", await xml.Content.ReadAsStringAsync());
+
+        var json = await h.Client.GetAsync("/api/test_crud/widgets?format=json");
+        Assert.Equal("application/json; charset=utf-8", json.Content.Headers.ContentType!.ToString());
+        Assert.Equal("attachment; filename=\"widgets.json\"", json.Content.Headers.GetValues("Content-Disposition").Single());
+    }
+
+    [Fact]
+    public async Task Export_with_unknown_format_falls_through_to_json_list_envelope()
+    {
+        await using var h = await BuildAsync(seed: db => db.Set<Widget>().Add(NewWidget("solo")));
+
+        var res = await h.Client.GetAsync("/api/test_crud/widgets?format=yaml");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("application/json; charset=utf-8", res.Content.Headers.ContentType!.ToString());
+        Assert.False(res.Content.Headers.Contains("Content-Disposition"));
+        var body = await ReadJson(res);
+        Assert.Equal(1, body.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Export_with_disabled_format_falls_through_to_json_list_envelope()
+    {
+        // ExportFormats restricts to csv only → a json export request returns the normal list envelope (OM parity).
+        var config = WidgetConfig(exportFormats: new[] { "csv" });
+        await using var h = await BuildAsync(seed: db => db.Set<Widget>().Add(NewWidget("solo")), config: config);
+
+        var json = await h.Client.GetAsync("/api/test_crud/widgets?format=json");
+        Assert.Equal("application/json; charset=utf-8", json.Content.Headers.ContentType!.ToString());
+        Assert.False(json.Content.Headers.Contains("Content-Disposition"));
+        Assert.Equal(1, (await ReadJson(json)).GetProperty("total").GetInt32());
+
+        var csv = await h.Client.GetAsync("/api/test_crud/widgets?format=csv");
+        Assert.Equal("text/csv; charset=utf-8", csv.Content.Headers.ContentType!.ToString());
     }
 }

@@ -119,6 +119,23 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     /// <summary>Post-list decorator (upstream <c>afterList</c> hook); runs after custom-field decoration.</summary>
     public Func<IReadOnlyList<IDictionary<string, object?>>, CommandContext, HttpContext, Task>? ListHook { get; init; }
 
+    // ---- List export (the OM "Export" button; upstream CrudExportOptions) ----------------------
+
+    /// <summary>
+    /// Export formats the list endpoint's <c>?format=</c> may serve (upstream <c>list.export.formats</c>).
+    /// <c>null</c> (default) enables all four — <c>csv</c>, <c>json</c>, <c>xml</c>, <c>markdown</c>. A
+    /// module can restrict the set (or pass an empty list to disable export). A requested format that is
+    /// not enabled falls through to the normal JSON list envelope, mirroring OM (spec: factory GET handler).
+    /// </summary>
+    public IReadOnlyList<string>? ExportFormats { get; init; }
+
+    /// <summary>
+    /// Filename stem for downloaded exports (upstream <c>list.export.filename</c> fallback base). Defaults
+    /// to the last segment of <see cref="BasePath"/>, else <see cref="ResourceKind"/>. Sanitized to
+    /// <c>[a-z0-9_-]</c> and suffixed with the format extension (markdown → <c>.md</c>).
+    /// </summary>
+    public string? ExportFilenameBase { get; init; }
+
     // ---- Lifecycle events (spec 03 R50) -------------------------------------------------------
 
     public string? CreatedEvent { get; init; }

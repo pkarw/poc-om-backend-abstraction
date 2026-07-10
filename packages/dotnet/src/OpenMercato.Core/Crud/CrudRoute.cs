@@ -28,8 +28,11 @@ namespace OpenMercato.Core.Crud;
 /// <see cref="ICrudCustomFields"/> decorates reads and persists <c>cf_*</c> writes;
 /// <see cref="CommandHttpException"/> (incl. the optimistic-lock 409) maps straight to the response.
 ///
+/// The list <c>?format=csv|json|xml|markdown</c> export (the OM "Export" button) serializes the full
+/// filtered set via <see cref="CrudExport"/> (spec: factory GET export branch).
+///
 /// PARITY-TODO (clean extension points, deferred to later ports): API interceptors, response enrichers,
-/// exports, the CRUD list cache + <c>x-om-cache</c>/tag invalidation, mutation guards, sync before/after
+/// the CRUD list cache + <c>x-om-cache</c>/tag invalidation, mutation guards, sync before/after
 /// event subscribers, and read-access logging. Each is a documented seam, not a behavioural change here.
 /// </summary>
 public static class CrudRoute
@@ -64,35 +67,18 @@ public static class CrudRoute
         if (query.SingleId is { } singleId)
             return await FetchSingleAsync(http, config, ctx!, singleId, query.WithDeleted);
 
-        var services = http.RequestServices;
-        var db = services.GetRequiredService<AppDbContext>();
-
         // Empty org scope → 200 empty envelope without touching the base table (spec 02 R27 / 03 R21).
+        // Mirrors OM: even an export request on an empty scope returns the JSON envelope, not a file.
         if (config.OrgScoped && ctx!.OrganizationIds is { Count: 0 })
             return Json(CrudListQueryParser.BuildEnvelope(Array.Empty<object>(), 0, query.Page, query.PageSize), 200);
 
-        // Index-backed list (opt-in): resolve matching ids (incl. cf:<key> filter/sort) from the query
-        // index, then load those base rows by id in index order (upstream queryEngine list path, R49).
-        if (config.UseIndexList)
-        {
-            var indexQuery = services.GetRequiredService<ICrudIndexQuery>();
-            var indexed = await indexQuery.ResolveListAsync(config.EntityType, query, ctx!);
-            if (indexed is not null)
-                return await BuildIndexedListAsync(http, config, ctx!, query, indexed);
-        }
+        // Export branch (the OM "Export" button): when ?format= names an enabled format, serialize the
+        // FULL filtered result set instead of the paged JSON envelope (spec: factory GET handler).
+        var exportFormat = ResolveExportFormat(config, http.Request);
+        if (exportFormat is not null)
+            return await ExportListAsync(http, config, ctx!, query, exportFormat);
 
-        var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
-        q = ApplyScope(q, config, ctx!, query.WithDeleted);
-        if (query.Ids.Count > 0) q = q.Where(BuildIdInPredicate(config.IdSelector, query.Ids));
-        if (config.ApplyFilters is not null) q = config.ApplyFilters(q, query, ctx!);
-
-        var total = await q.CountAsync();
-        q = ApplySort(q, config, query);
-        var rows = await q.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToListAsync();
-
-        var items = rows.Select(config.ProjectItem).ToList();
-        var customFields = services.GetRequiredService<ICrudCustomFields>();
-        await customFields.MergeIntoListItemsAsync(config.EntityType, items, ctx!);
+        var (items, total) = await FetchListPageAsync(http, config, ctx!, query);
         if (config.ListHook is not null) await config.ListHook(items, ctx!, http);
 
         var envelope = CrudListQueryParser.BuildEnvelope(items.Cast<object>().ToList(), total, query.Page, query.PageSize);
@@ -100,40 +86,168 @@ public static class CrudRoute
     }
 
     /// <summary>
-    /// Materialize an index-backed list page: load the base rows for the resolved ids (still applying
-    /// scope/soft-delete for safety), re-order them to match the index sort, decorate with custom fields,
-    /// and build the envelope using the index's total. The index owns paging + filter/sort semantics.
+    /// Fetch one list page — the shared read path for the normal list AND each export batch. Resolves via
+    /// the query index when opted in (loading base rows by resolved id in index order), else via the base
+    /// table with scope/soft-delete + filters + sort + pagination. Projects rows and decorates them with
+    /// custom fields, so exported rows carry the exact same columns (snake_case + <c>cf_</c> keys) as the
+    /// on-screen list. Does NOT run <see cref="CrudConfig{TEntity}.ListHook"/> — the caller owns that so it
+    /// runs once (per page for the list, once over the aggregate for an export), matching OM's afterList.
     /// </summary>
-    private static async Task<IResult> BuildIndexedListAsync<TEntity>(
-        HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, CrudListQuery query, CrudIndexQueryResult indexed) where TEntity : class
+    private static async Task<(List<IDictionary<string, object?>> Items, int Total)> FetchListPageAsync<TEntity>(
+        HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, CrudListQuery query) where TEntity : class
     {
         var services = http.RequestServices;
         var db = services.GetRequiredService<AppDbContext>();
+        var customFields = services.GetRequiredService<ICrudCustomFields>();
 
-        var order = indexed.RecordIds;
-        List<TEntity> rows;
-        if (order.Count == 0)
+        // Index-backed list (opt-in): resolve matching ids (incl. cf:<key> filter/sort) from the query
+        // index, then load those base rows by id in index order (upstream queryEngine list path, R49).
+        if (config.UseIndexList)
         {
-            rows = new List<TEntity>();
+            var indexQuery = services.GetRequiredService<ICrudIndexQuery>();
+            var indexed = await indexQuery.ResolveListAsync(config.EntityType, query, ctx);
+            if (indexed is not null)
+            {
+                var indexedRows = await LoadIndexedRowsAsync(db, config, ctx, query, indexed);
+                var indexedItems = indexedRows.Select(config.ProjectItem).ToList();
+                await customFields.MergeIntoListItemsAsync(config.EntityType, indexedItems, ctx);
+                return (indexedItems, indexed.Total);
+            }
         }
-        else
-        {
-            var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
-            q = ApplyScope(q, config, ctx, query.WithDeleted);
-            q = q.Where(BuildIdInPredicate(config.IdSelector, order));
-            var unordered = await q.ToListAsync();
-            var idSelector = config.IdSelector.Compile();
-            var byId = unordered.ToDictionary(idSelector);
-            rows = order.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
-        }
+
+        var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
+        q = ApplyScope(q, config, ctx, query.WithDeleted);
+        if (query.Ids.Count > 0) q = q.Where(BuildIdInPredicate(config.IdSelector, query.Ids));
+        if (config.ApplyFilters is not null) q = config.ApplyFilters(q, query, ctx);
+
+        var total = await q.CountAsync();
+        q = ApplySort(q, config, query);
+        var rows = await q.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToListAsync();
 
         var items = rows.Select(config.ProjectItem).ToList();
-        var customFields = services.GetRequiredService<ICrudCustomFields>();
         await customFields.MergeIntoListItemsAsync(config.EntityType, items, ctx);
-        if (config.ListHook is not null) await config.ListHook(items, ctx, http);
+        return (items, total);
+    }
 
-        var envelope = CrudListQueryParser.BuildEnvelope(items.Cast<object>().ToList(), indexed.Total, query.Page, query.PageSize);
-        return Json(envelope, 200);
+    /// <summary>
+    /// Load the base rows for an index-resolved page: fetch by id (still applying scope/soft-delete for
+    /// safety) then re-order them to match the index sort. The index owns paging + filter/sort semantics.
+    /// </summary>
+    private static async Task<List<TEntity>> LoadIndexedRowsAsync<TEntity>(
+        AppDbContext db, CrudConfig<TEntity> config, CommandContext ctx, CrudListQuery query, CrudIndexQueryResult indexed) where TEntity : class
+    {
+        var order = indexed.RecordIds;
+        if (order.Count == 0) return new List<TEntity>();
+
+        var q = db.Set<TEntity>().AsNoTracking().AsQueryable();
+        q = ApplyScope(q, config, ctx, query.WithDeleted);
+        q = q.Where(BuildIdInPredicate(config.IdSelector, order));
+        var unordered = await q.ToListAsync();
+        var idSelector = config.IdSelector.Compile();
+        var byId = unordered.ToDictionary(idSelector);
+        return order.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+    }
+
+    // ---- Export (the OM "Export" button) ------------------------------------------------------
+
+    /// <summary>Total rows an export will materialize, capped to bound memory (mirrors OM's 10k batch ceiling).</summary>
+    private const int MaxExportRows = 10000;
+
+    /// <summary>Default export batch size (upstream DEFAULT_EXPORT_BATCH_SIZE); clamped to [100, 10000].</summary>
+    private const int DefaultExportBatchSize = 1000;
+
+    /// <summary>Resolve the requested export format if it is enabled for this resource, else null.</summary>
+    private static string? ResolveExportFormat<TEntity>(CrudConfig<TEntity> config, HttpRequest request) where TEntity : class
+    {
+        var requested = CrudExport.NormalizeFormat(request.Query["format"].ToString());
+        if (requested is null) return null;
+        return ResolveAvailableFormats(config).Contains(requested) ? requested : null;
+    }
+
+    private static IReadOnlyList<string> ResolveAvailableFormats<TEntity>(CrudConfig<TEntity> config) where TEntity : class
+    {
+        // null (default) → all four formats; a provided list (even empty) is used verbatim after normalization.
+        if (config.ExportFormats is null) return CrudExport.AllFormats;
+        var result = new List<string>();
+        foreach (var f in config.ExportFormats)
+        {
+            var n = CrudExport.NormalizeFormat(f);
+            if (n is not null && !result.Contains(n)) result.Add(n);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Serialize the FULL filtered result set to a downloadable file: loop the shared list-fetch path
+    /// page by page (reusing ProjectItem + custom-field decoration, so exported rows match the on-screen
+    /// columns) until the total is reached or the <see cref="MaxExportRows"/> cap is hit, run the list hook
+    /// once over the aggregate, then serialize via <see cref="CrudExport"/> with the right content type +
+    /// Content-Disposition (upstream factory GET export branch).
+    /// </summary>
+    private static async Task<IResult> ExportListAsync<TEntity>(
+        HttpContext http, CrudConfig<TEntity> config, CommandContext ctx, CrudListQuery query, string format) where TEntity : class
+    {
+        var batchSize = Math.Min(Math.Max(Math.Max(query.PageSize, DefaultExportBatchSize), 100), MaxExportRows);
+
+        var all = new List<IDictionary<string, object?>>();
+        var page = 1;
+        while (all.Count < MaxExportRows)
+        {
+            var pageQuery = query with { Page = page, PageSize = batchSize };
+            var (items, total) = await FetchListPageAsync(http, config, ctx, pageQuery);
+            if (items.Count == 0) break;
+            all.AddRange(items);
+            if (all.Count >= total) break;
+            if (items.Count < batchSize) break;
+            page++;
+        }
+        if (all.Count > MaxExportRows) all = all.GetRange(0, MaxExportRows);
+
+        if (config.ListHook is not null) await config.ListHook(all, ctx, http);
+
+        var rows = all.Select(d => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(d)).ToList();
+        var prepared = CrudExport.PrepareDefault(rows);
+        var serialized = CrudExport.Serialize(prepared, format);
+
+        var fallbackBase = !string.IsNullOrWhiteSpace(config.ExportFilenameBase)
+            ? config.ExportFilenameBase!
+            : LastSegment(config.BasePath) ?? config.ResourceKind;
+        var filename = CrudExport.DefaultFilename(fallbackBase, format);
+
+        return new ExportFileResult(serialized.Body, serialized.ContentType, filename);
+    }
+
+    private static string? LastSegment(string basePath)
+    {
+        var trimmed = basePath.Trim('/');
+        if (trimmed.Length == 0) return null;
+        var idx = trimmed.LastIndexOf('/');
+        return idx >= 0 ? trimmed[(idx + 1)..] : trimmed;
+    }
+
+    /// <summary>Writes a UTF-8 export body with an exact content type + attachment Content-Disposition.</summary>
+    private sealed class ExportFileResult : IResult
+    {
+        private readonly string _body;
+        private readonly string _contentType;
+        private readonly string _filename;
+
+        public ExportFileResult(string body, string contentType, string filename)
+        {
+            _body = body;
+            _contentType = contentType;
+            _filename = filename;
+        }
+
+        public async Task ExecuteAsync(HttpContext http)
+        {
+            http.Response.StatusCode = StatusCodes.Status200OK;
+            http.Response.ContentType = _contentType;
+            http.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{_filename}\"";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(_body);
+            http.Response.ContentLength = bytes.Length;
+            await http.Response.Body.WriteAsync(bytes);
+        }
     }
 
     private static async Task<IResult> GetByPathAsync<TEntity>(HttpContext http, string id, CrudConfig<TEntity> config) where TEntity : class
