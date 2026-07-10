@@ -1,0 +1,164 @@
+name: open-mercato-dotnet
+
+# Production stack: the REAL Open Mercato frontend (with the AI assistant, dashboards, etc.)
+# served on top of the .NET-ported backend APIs, sharing one Postgres + Redis.
+#
+#   caddy   ── TLS + reverse proxy: ported /api/* -> dotnet-api, everything else -> om-app
+#   om-app  ── Open Mercato Next.js app (UI, AI assistant, non-ported /api/*). MIGRATES the schema.
+#   dotnet-api    ── the .NET-ported backend. Serves ONLY the ported /api/* and SEEDS the DB.
+#   dotnet-worker ── the .NET background worker (queues).
+#   postgres + redis ── shared by both runtimes.
+#
+# OM owns + migrates the schema (migrate-only, no seed). The .NET API runs migrations-off and seeds
+# the ported-module data itself so all PII is written/read with the port's own crypto. Both share
+# JWT_SECRET + LOOKUP_HASH_PEPPER + TENANT_DATA_ENCRYPTION_KEY so auth + encrypted columns are
+# interchangeable across the two runtimes.
+#
+# Configure everything in deploy/.env (copy from deploy/.env.example). Bring up with:
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17          # pgvector — required by OM's vector search
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mercato}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-mercato}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mercato} -d ${POSTGRES_DB:-mercato}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # The Open Mercato app (UI + AI assistant + all non-ported /api/*). MIGRATE-ONLY: it runs
+  # `yarn db:migrate` (schema only, NO seed) then serves — the .NET API seeds instead.
+  om-app:
+    image: ${OM_APP_IMAGE:-open-mercato/app:local}
+    restart: unless-stopped
+    user: "0"
+    working_dir: /app/apps/mercato
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        INIT_COMMAND='yarn db:migrate' MIGRATE_COMMAND='yarn db:migrate' sh /app/docker/scripts/init-or-migrate.sh
+        yarn start
+    environment:
+      PORT: "3000"
+      APP_URL: https://${DOMAIN:?set DOMAIN in .env}
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      CACHE_REDIS_URL: redis://redis:6379
+      CACHE_STRATEGY: redis
+      QUEUE_STRATEGY: async
+      QUEUE_REDIS_URL: redis://redis:6379
+      # Shared secrets — MUST match the .NET services below.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER:?set LOOKUP_HASH_PEPPER in .env}
+      TENANT_DATA_ENCRYPTION: "yes"
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY:?set TENANT_DATA_ENCRYPTION_KEY in .env}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_KEY}
+      # AI: the assistant, vector-search embeddings and OCR all use this key.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-gpt-4o-mini}
+      OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
+      OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD:?set OM_INIT_SUPERADMIN_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    volumes:
+      - ominit:/tmp/init-marker
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  # The .NET-ported backend API. Migrations-off (OM owns the schema) but SEEDS the ported-module data.
+  dotnet-api:
+    image: ${DOTNET_IMAGE:-open-mercato/dotnet:local}
+    build:
+      context: ../packages/dotnet
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER}
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_KEY}
+      OM_SKIP_MIGRATIONS: "1"
+      OM_SEED_ON_BOOT: "1"
+      OM_INIT_SUPERADMIN_EMAIL: ${OM_INIT_SUPERADMIN_EMAIL:-superadmin@acme.com}
+      OM_INIT_SUPERADMIN_PASSWORD: ${OM_INIT_SUPERADMIN_PASSWORD}
+      # .NET fetches OM's nav from here and filters it to the ported modules for the sidebar.
+      OM_NAV_UPSTREAM: http://om-app:3000
+      PORT: "8080"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      om-app: { condition: service_healthy }
+
+  dotnet-worker:
+    image: ${DOTNET_IMAGE:-open-mercato/dotnet:local}
+    build:
+      context: ../packages/dotnet
+    restart: unless-stopped
+    command: ["dotnet", "/app/worker/OpenMercato.Worker.dll"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mercato}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mercato}
+      REDIS_URL: redis://redis:6379
+      QUEUE_STRATEGY: redis
+      QUEUE_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      LOOKUP_HASH_PEPPER: ${LOOKUP_HASH_PEPPER}
+      TENANT_DATA_ENCRYPTION_KEY: ${TENANT_DATA_ENCRYPTION_KEY}
+      TENANT_DATA_ENCRYPTION_FALLBACK_KEY: ${TENANT_DATA_ENCRYPTION_KEY}
+      OM_SKIP_MIGRATIONS: "1"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  # TLS terminator + front proxy. Automatic HTTPS (Let's Encrypt) for ${DOMAIN}.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:?set LETSENCRYPT_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - om-app
+      - dotnet-api
+
+volumes:
+  pgdata:
+  redisdata:
+  ominit:
+  caddy-data:
+  caddy-config:

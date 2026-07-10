@@ -1,0 +1,31 @@
+# Production reverse proxy with automatic HTTPS (Let's Encrypt).
+#
+# The ported /api/* paths go to the .NET service; everything else (the Open Mercato UI,
+# its AI assistant, and all NON-ported /api/*) goes to the OM app. Keep the @ported matcher
+# in sync with the modules the .NET service actually serves (testbench/ported-modules.txt).
+
+{
+	email {$LETSENCRYPT_EMAIL}
+}
+
+{$DOMAIN} {
+	# Ported modules → .NET backend.
+	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
+	handle @ported {
+		reverse_proxy dotnet-api:8080 {
+			# Preserve the client X-Forwarded-For (rate limiting keys on the real client IP).
+			header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+		}
+	}
+
+	# Everything else (OM UI + AI assistant + non-ported /api/*) → OM app.
+	handle {
+		reverse_proxy om-app:3000
+	}
+
+	encode zstd gzip
+	log {
+		output stdout
+		format console
+	}
+}

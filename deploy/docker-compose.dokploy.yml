@@ -1,0 +1,20 @@
+# Dokploy override — apply ON TOP of docker-compose.prod.yml.
+#
+# Dokploy's built-in Traefik already owns ports 80/443 and provisions TLS, so here we make the
+# internal `caddy` splitter HTTP-only and stop it binding host ports. In the Dokploy UI you then
+# map your domain to the `caddy` service on port 80 (Domains tab).
+#
+#   docker compose --env-file deploy/.env \
+#     -f deploy/docker-compose.prod.yml -f deploy/docker-compose.dokploy.yml up -d --build
+#
+# (Dokploy's "Docker Compose" app type lets you list both files.)
+
+services:
+  caddy:
+    ports: []                              # let Dokploy's Traefik own 80/443
+    volumes:
+      - ./Caddyfile.internal:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    expose:
+      - "80"                               # Traefik routes DOMAIN -> caddy:80

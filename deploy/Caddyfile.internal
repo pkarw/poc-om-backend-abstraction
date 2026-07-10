@@ -1,0 +1,16 @@
+# HTTP-only internal splitter for platforms that terminate TLS for you (e.g. Dokploy's Traefik,
+# a load balancer, or Cloudflare Tunnel). No certificates here — the outer proxy handles HTTPS and
+# forwards plain HTTP to this container's port 80. Same routing split as the TLS Caddyfile.
+
+:80 {
+	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
+	handle @ported {
+		reverse_proxy dotnet-api:8080 {
+			header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+		}
+	}
+	handle {
+		reverse_proxy om-app:3000
+	}
+	encode zstd gzip
+}

@@ -73,6 +73,15 @@ cd packages/golang && make up      # 🐹  → http://localhost:8090/healthz
 
 Native (no Docker) quickstarts live in each package's `README.md` — always the same `make` targets: `dev`, `worker`, `migrate`, `test`.
 
+## 🚢 Deploy to production
+
+Run the **real Open Mercato UI (with the AI assistant) on the .NET backend**, behind TLS, on your own
+server — see [`deploy/README.md`](deploy/README.md). It has two turnkey sections: a **Hetzner Ubuntu
+VPS** and **Dokploy**. The stack (OM app + `dotnet-api` + `dotnet-worker` + Postgres + Redis + Caddy)
+lives in [`deploy/docker-compose.prod.yml`](deploy/docker-compose.prod.yml); copy
+[`deploy/.env.example`](deploy/.env.example), set your domain + secrets + `OPENAI_API_KEY`, and
+`docker compose --env-file deploy/.env -f deploy/docker-compose.prod.yml up -d --build`.
+
 ## 🤖 The porting loop
 
 Technology-agnostic skills — the *same* skill drives a port to Python, .NET, Go, or any future target:
