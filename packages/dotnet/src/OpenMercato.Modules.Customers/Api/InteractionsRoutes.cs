@@ -662,6 +662,12 @@ public sealed class InteractionsRoutes : ICustomersRouteGroup
         var type = CustomersHttp.Str(body, "interactionType")?.Trim();
         if (string.IsNullOrEmpty(type) || type.Length > 100)
             issues.Add(new CrudValidationIssue(new[] { "interactionType" }, "interactionType is required", "invalid_string"));
+        // date/time are optional but, when PRESENT, must be non-empty after trim (upstream
+        // `z.string().trim().min(1).optional()`, issue #1806 — OM integration test TC-CRM-053).
+        if (CustomersHttp.Has(body, "date") && string.IsNullOrEmpty(CustomersHttp.Str(body, "date")?.Trim()))
+            issues.Add(new CrudValidationIssue(new[] { "date" }, "customers.activities.errors.dateRequired", "too_small"));
+        if (CustomersHttp.Has(body, "time") && string.IsNullOrEmpty(CustomersHttp.Str(body, "time")?.Trim()))
+            issues.Add(new CrudValidationIssue(new[] { "time" }, "customers.activities.errors.timeRequired", "too_small"));
         // superRefine: interactionType='call' requires a valid phoneNumber when one is provided.
         if (type == "call" && CustomersHttp.Has(body, "phoneNumber"))
         {

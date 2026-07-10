@@ -41,25 +41,75 @@ public static class CustomersSeeder
             .SelectMany(offset => Enumerable.Range(1, 4).Select(q => new DictSeed($"{year + offset}_q{q}")))
             .ToArray();
 
+        // Labels/colors/icons mirror upstream cli.ts DEFAULTS 1:1 — the UI renders status badges + dictionary
+        // combobox options from these (a lowercase "open" would render "open" instead of the "Open" badge
+        // the specs assert). (OM integration tests TC-CRM-006/007/083 …)
         return new (string, DictSeed[])[]
         {
-            ("status", Seeds("active", "inactive", "pending", "archived")),
-            ("lifecycle_stage", Seeds("lead", "prospect", "customer", "subscriber", "churned", "other")),
-            ("source", Seeds("linkedin", "email", "web_form", "referral", "customer_referral", "partner_referral",
-                "event", "cold_outreach", "facebook", "typeform", "other")),
-            ("address_type", Seeds("office", "work", "billing", "shipping", "home")),
-            ("activity_type", Seeds("call", "email", "meeting", "note", "task")),
+            ("status", new[] {
+                new DictSeed("active", "Active", "#22c55e", "lucide:user-check"),
+                new DictSeed("inactive", "Inactive", "#94a3b8", "lucide:pause-circle"),
+                new DictSeed("pending", "Pending", "#f59e0b", "lucide:clock"),
+                new DictSeed("archived", "Archived", "#64748b", "lucide:archive") }),
+            ("lifecycle_stage", new[] {
+                new DictSeed("lead", "Lead", "#3b82f6", "lucide:sparkles"),
+                new DictSeed("prospect", "Prospect", "#8b5cf6", "lucide:eye"),
+                new DictSeed("customer", "Customer", "#22c55e", "lucide:handshake"),
+                new DictSeed("subscriber", "Subscriber", "#10b981", "lucide:bell"),
+                new DictSeed("churned", "Churned", "#ef4444", "lucide:user-x"),
+                new DictSeed("other", "Other", "#94a3b8", "lucide:circle") }),
+            ("source", new[] {
+                new DictSeed("linkedin", "LinkedIn", "#0a66c2", "lucide:linkedin"),
+                new DictSeed("email", "Email", "#3b82f6", "lucide:mail"),
+                new DictSeed("web_form", "Web form", "#22c55e", "lucide:globe"),
+                new DictSeed("referral", "Referral", "#8b5cf6", "lucide:users"),
+                new DictSeed("customer_referral", "Customer referral", "#22c55e", "lucide:thumbs-up"),
+                new DictSeed("partner_referral", "Partner referral", "#3b82f6", "lucide:handshake"),
+                new DictSeed("event", "Conference / Event", "#f59e0b", "lucide:calendar"),
+                new DictSeed("cold_outreach", "Cold outreach", "#94a3b8", "lucide:phone"),
+                new DictSeed("facebook", "Facebook", "#1877f2", "lucide:facebook"),
+                new DictSeed("typeform", "Typeform", "#262627", "lucide:file-text"),
+                new DictSeed("other", "Other", "#64748b", "lucide:circle") }),
+            ("address_type", new[] {
+                new DictSeed("office", "Office", "#3b82f6", "lucide:building"),
+                new DictSeed("work", "Work", "#6366f1", "lucide:briefcase"),
+                new DictSeed("billing", "Billing", "#f97316", "lucide:wallet"),
+                new DictSeed("shipping", "Shipping", "#22c55e", "lucide:truck"),
+                new DictSeed("home", "Home", "#10b981", "lucide:map-pin") }),
+            ("activity_type", new[] {
+                new DictSeed("call", "Call", "#2563eb", "lucide:phone-call"),
+                new DictSeed("email", "Email", "#16a34a", "lucide:mail"),
+                new DictSeed("meeting", "Meeting", "#f59e0b", "lucide:users"),
+                new DictSeed("note", "Note", "#a855f7", "lucide:notebook"),
+                new DictSeed("task", "Task", "#ef4444", "lucide:check-square") }),
             ("job_title", Seeds("Director of Operations", "VP of Partnerships", "Founder & Principal",
                 "Senior Project Manager", "Chief Revenue Officer", "Director of Retail Partnerships")),
-            ("deal_status", Seeds("open", "closed", "win", "loose", "in_progress")),
-            ("pipeline_stage", Seeds("opportunity", "marketing_qualified_lead", "sales_qualified_lead", "offering",
-                "negotiations", "win", "loose", "stalled")),
+            ("deal_status", new[] {
+                new DictSeed("open", "Open", "#2563eb", "lucide:circle"),
+                new DictSeed("closed", "Closed", "#6b7280", "lucide:check-circle"),
+                new DictSeed("win", "Win", "#22c55e", "lucide:trophy"),
+                new DictSeed("loose", "Loose", "#ef4444", "lucide:flag"),
+                new DictSeed("in_progress", "In progress", "#f59e0b", "lucide:activity") }),
+            ("pipeline_stage", new[] {
+                new DictSeed("opportunity", "Opportunity", "#38bdf8", "lucide:target"),
+                new DictSeed("marketing_qualified_lead", "Marketing Qualified Lead", "#a855f7", "lucide:sparkles"),
+                new DictSeed("sales_qualified_lead", "Sales Qualified Lead", "#f97316", "lucide:users"),
+                new DictSeed("offering", "Offering", "#22c55e", "lucide:package"),
+                new DictSeed("negotiations", "Negotiations", "#facc15", "lucide:handshake"),
+                new DictSeed("win", "Win", "#16a34a", "lucide:award"),
+                new DictSeed("loose", "Loose", "#ef4444", "lucide:flag"),
+                new DictSeed("stalled", "Stalled", "#6b7280", "lucide:alert-circle") }),
             ("industry", Seeds("Renewable Energy", "Software", "Interior Design", "SaaS", "E-commerce", "Healthcare",
                 "Manufacturing", "Logistics", "Financial Services", "Retail", "Hospitality", "Energy", "Media")),
             ("temperature", Seeds("hot", "high", "medium", "low", "cold")),
             ("renewal_quarter", renewalQuarters),
-            ("person_company_role", Seeds("decision_maker", "influencer", "budget_holder", "technical_evaluator",
-                "primary_contact", "end_user")),
+            ("person_company_role", new[] {
+                new DictSeed("decision_maker", "Decision maker", "#f59e0b", "lucide:crown"),
+                new DictSeed("influencer", "Influencer", "#8b5cf6", "lucide:sparkles"),
+                new DictSeed("budget_holder", "Budget holder", "#3b82f6", "lucide:wallet"),
+                new DictSeed("technical_evaluator", "Technical evaluator", "#22c55e", "lucide:wrench"),
+                new DictSeed("primary_contact", "Primary contact", "#0ea5e9", "lucide:star"),
+                new DictSeed("end_user", "End user", "#64748b", "lucide:user") }),
             ("customer_role_type", new[]
             {
                 new DictSeed("sales_owner", "Sales Owner", "#2563eb", "lucide:briefcase"),
