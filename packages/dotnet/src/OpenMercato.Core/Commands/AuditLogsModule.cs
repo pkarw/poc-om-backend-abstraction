@@ -1,6 +1,10 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenMercato.Core.Crud;
 using OpenMercato.Core.Modules;
 
 namespace OpenMercato.Core.Commands;
@@ -24,10 +28,15 @@ public sealed class AuditLogsModule : IModule
 {
     public string Id => "audit_logs";
 
+    // Match the pinned upstream acl.ts (audit_logs/acl.ts): self/tenant-scoped view + undo + redo.
     public IReadOnlyList<string> AclFeatures { get; } = new[]
     {
-        "audit_logs.view",
-        "audit_logs.undo",
+        "audit_logs.view_self",
+        "audit_logs.view_tenant",
+        "audit_logs.undo_self",
+        "audit_logs.undo_tenant",
+        "audit_logs.redo_self",
+        "audit_logs.redo_tenant",
     };
 
     public void ConfigureServices(IServiceCollection services)
@@ -73,9 +82,101 @@ public sealed class AuditLogsModule : IModule
         });
     }
 
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
     public void MapRoutes(IEndpointRouteBuilder routes)
     {
-        // PARITY-TODO: audit_logs API routes (list / actions/undo / actions/redo / access) land with
-        // the audit_logs API port + CRUD factory.
+        // Port of api/audit-logs/actions/{undo,redo}/route.ts. The command-write infra (ActionLogService +
+        // CommandBus.Undo/Redo + IUndoableCommand handlers) already exists; this exposes it over HTTP so
+        // the OM "Undo"/"Redo" UI works against the ported backend. (PARITY-TODO: the list + access routes.)
+        routes.MapPost("/api/audit_logs/audit-logs/actions/undo", (Func<HttpContext, Task<IResult>>)UndoAsync);
+        routes.MapPost("/api/audit_logs/audit-logs/actions/redo", (Func<HttpContext, Task<IResult>>)RedoAsync);
+    }
+
+    private static async Task<IResult> UndoAsync(HttpContext http)
+    {
+        var (ctx, denied) = await AuthorizeAsync(http, "audit_logs.undo_self");
+        if (denied is not null) return denied;
+
+        var undoToken = (await ReadStringAsync(http, "undoToken"))?.Trim();
+        if (string.IsNullOrEmpty(undoToken))
+            return Results.Json(new { error = "Invalid undo token" }, Web, statusCode: 400);
+
+        var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var logs = http.RequestServices.GetRequiredService<ActionLogService>();
+        var canUndoTenant = await reqCtx.HasAllFeaturesAsync(ctx!, new[] { "audit_logs.undo_tenant" });
+
+        var target = await logs.FindByUndoTokenAsync(undoToken);
+        // Fail-closed scope checks mirroring the upstream route (self vs tenant, tenant/org match).
+        if (target is null || target.ExecutionState != "done"
+            || (target.ActorUserId is { } actor && actor != ctx!.UserId && !canUndoTenant)
+            || (target.TenantId is { } t && t != ctx!.TenantId)
+            || (!canUndoTenant && target.OrganizationId is { } o && o != ctx!.OrganizationId))
+            return Results.Json(new { error = "Undo token not available" }, Web, statusCode: 400);
+
+        try
+        {
+            var bus = http.RequestServices.GetRequiredService<CommandBus>();
+            await bus.Undo(undoToken, ctx!);
+            return Results.Json(new { ok = true, logId = target.Id.ToString() }, Web, statusCode: 200);
+        }
+        catch
+        {
+            return Results.Json(new { error = "Undo failed" }, Web, statusCode: 400);
+        }
+    }
+
+    private static async Task<IResult> RedoAsync(HttpContext http)
+    {
+        var (ctx, denied) = await AuthorizeAsync(http, "audit_logs.redo_self");
+        if (denied is not null) return denied;
+
+        var logIdRaw = (await ReadStringAsync(http, "logId"))?.Trim();
+        if (string.IsNullOrEmpty(logIdRaw) || !Guid.TryParse(logIdRaw, out var logId))
+            return Results.Json(new { error = "Invalid log id" }, Web, statusCode: 400);
+
+        var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var logs = http.RequestServices.GetRequiredService<ActionLogService>();
+        var canRedoTenant = await reqCtx.HasAllFeaturesAsync(ctx!, new[] { "audit_logs.redo_tenant" });
+
+        var target = await logs.FindByIdAsync(logId);
+        if (target is null || target.ExecutionState != "undone"
+            || (target.ActorUserId is { } actor && actor != ctx!.UserId && !canRedoTenant)
+            || (target.TenantId is { } t && t != ctx!.TenantId)
+            || (!canRedoTenant && target.OrganizationId is { } o && o != ctx!.OrganizationId))
+            return Results.Json(new { error = "Redo target not available" }, Web, statusCode: 400);
+
+        try
+        {
+            var bus = http.RequestServices.GetRequiredService<CommandBus>();
+            await bus.Redo(logId, ctx!);
+            return Results.Json(new { ok = true, logId = target.Id.ToString() }, Web, statusCode: 200);
+        }
+        catch
+        {
+            return Results.Json(new { error = "Redo failed" }, Web, statusCode: 400);
+        }
+    }
+
+    private static async Task<(OpenMercato.Core.Commands.CommandContext? Ctx, IResult? Denied)> AuthorizeAsync(HttpContext http, string feature)
+    {
+        var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var ctx = await reqCtx.ResolveAsync(http);
+        if (ctx is null) return (null, Results.Json(new { error = "Unauthorized" }, Web, statusCode: 401));
+        if (!await reqCtx.HasAllFeaturesAsync(ctx, new[] { feature }))
+            return (null, Results.Json(new { error = "Forbidden", requiredFeatures = new[] { feature } }, Web, statusCode: 403));
+        return (ctx, null);
+    }
+
+    private static async Task<string?> ReadStringAsync(HttpContext http, string key)
+    {
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(http.Request.Body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                   && doc.RootElement.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString() : null;
+        }
+        catch { return null; }
     }
 }

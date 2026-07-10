@@ -91,6 +91,10 @@ public static class CustomersSeeder
     private static async Task SeedCurrencyDictionaryAsync(
         AppDbContext db, Guid tenantId, Guid organizationId, DateTimeOffset now, CancellationToken ct)
     {
+        // Skip when the generic dictionaries entities aren't mapped in this context (e.g. a minimal
+        // test DbContext that only loads the customers module).
+        if (db.Model.FindEntityType(typeof(OpenMercato.Modules.Dictionaries.Data.Dictionary)) is null) return;
+
         var dict = await db.Set<OpenMercato.Modules.Dictionaries.Data.Dictionary>().FirstOrDefaultAsync(d =>
             d.TenantId == tenantId && d.OrganizationId == organizationId && d.Key == "currency" && d.DeletedAt == null, ct);
         if (dict is null)

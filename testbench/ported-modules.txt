@@ -10,3 +10,4 @@ query_index
 dictionaries
 currencies
 customers
+audit_logs

@@ -22,7 +22,7 @@
 	# NOTE: /api/auth/admin/nav (the sidebar) is served by .NET, which fetches OM's own nav
 	# (OM_NAV_UPSTREAM) and FILTERS it to the ported modules — so the testbench sidebar shows only
 	# ported modules. See OpenMercato.Modules.Auth/Api/AdminNavRouteGroup.cs.
-	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
+	@ported path /api/auth/* /api/audit_logs/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
 	handle @ported {
 		reverse_proxy dotnet-api:8080 {
 			# Preserve the client-supplied X-Forwarded-For verbatim (do NOT append Caddy's own hop).

@@ -10,7 +10,7 @@
 
 {$DOMAIN} {
 	# Ported modules → .NET backend.
-	@ported path /api/auth/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
+	@ported path /api/auth/* /api/audit_logs/* /api/directory/* /api/dashboards/* /api/entities/* /api/query_index/* /api/dictionaries/* /api/currencies/* /api/customers/*
 	handle @ported {
 		reverse_proxy dotnet-api:8080 {
 			# Preserve the client X-Forwarded-For (rate limiting keys on the real client IP).
