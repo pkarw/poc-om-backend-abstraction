@@ -144,6 +144,9 @@ public sealed class AuthModule : IModule
         services.AddSingleton<DerivedKmsService>();
         services.AddSingleton<TenantDataEncryptionService>();
         services.AddSingleton<TenantEncryptionInterceptor>();
+        // Read-side: global materialization interceptor that auto-decrypts every registered entity type
+        // (added onto AppDbContext's options alongside the SaveChanges interceptor in each host).
+        services.AddSingleton<TenantDecryptionMaterializationInterceptor>();
 
         // Domain services provided by the domain slices.
         services.AddScoped<IRbacService, OpenMercato.Modules.Auth.Services.RbacService>();

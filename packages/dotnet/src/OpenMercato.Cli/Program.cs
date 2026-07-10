@@ -33,8 +33,11 @@ services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
 // ModuleMigrations.ApplyAllAsync (see the migrate/greenfield commands).
 services.AddDbContext<AppDbContext>((sp, options) => options
     .UseNpgsql(config.NpgsqlConnectionString)
-    // Per-tenant-DEK field encryption on write (no-op when no encryption map applies).
-    .AddInterceptors(sp.GetRequiredService<OpenMercato.Modules.Auth.Security.TenantEncryptionInterceptor>())
+    // Per-tenant-DEK field encryption: encrypt on write, decrypt on materialization (read).
+    // Both no-op when no encryption map applies (e.g. non-relational provider / unprovisioned tenant).
+    .AddInterceptors(
+        sp.GetRequiredService<OpenMercato.Modules.Auth.Security.TenantEncryptionInterceptor>(),
+        sp.GetRequiredService<OpenMercato.Modules.Auth.Security.TenantDecryptionMaterializationInterceptor>())
     .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 // Redis is optional for the CLI: the multiplexer is only constructed if a command resolves it, and
 // AbortOnConnectFail=false means even then it never blocks when Redis is down.

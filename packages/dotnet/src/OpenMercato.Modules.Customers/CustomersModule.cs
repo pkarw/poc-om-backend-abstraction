@@ -108,6 +108,83 @@ public sealed class CustomersModule : IModule
         };
 
     // -------------------------------------------------------------------------------------------
+    // Field encryption — per-tenant-DEK maps (encryption.ts defaultEncryptionMaps). 7 entities, no
+    // hashField on any customers field. Seeded into encryption_maps per (tenant, org) by the initial
+    // seeder (via ModuleRegistry.MergedDefaultEncryptionMaps); drive both the SaveChanges encryption
+    // interceptor (write) and the materialization decrypt interceptor (read).
+    // -------------------------------------------------------------------------------------------
+    public IReadOnlyList<ModuleEncryptionMap> DefaultEncryptionMaps { get; } = new[]
+    {
+        new ModuleEncryptionMap("customers:customer_entity", new[]
+        {
+            new EncryptedFieldRule("display_name"),
+            new EncryptedFieldRule("primary_email"),
+            new EncryptedFieldRule("primary_phone"),
+            new EncryptedFieldRule("next_interaction_name"),
+            new EncryptedFieldRule("description"),
+        }),
+        new ModuleEncryptionMap("customers:customer_person_profile", new[]
+        {
+            new EncryptedFieldRule("first_name"),
+            new EncryptedFieldRule("last_name"),
+            new EncryptedFieldRule("preferred_name"),
+            new EncryptedFieldRule("job_title"),
+            new EncryptedFieldRule("department"),
+            new EncryptedFieldRule("seniority"),
+            new EncryptedFieldRule("timezone"),
+            new EncryptedFieldRule("linked_in_url"),
+            new EncryptedFieldRule("twitter_url"),
+        }),
+        new ModuleEncryptionMap("customers:customer_company_profile", new[]
+        {
+            new EncryptedFieldRule("legal_name"),
+            new EncryptedFieldRule("brand_name"),
+            new EncryptedFieldRule("domain"),
+            new EncryptedFieldRule("website_url"),
+            new EncryptedFieldRule("industry"),
+        }),
+        new ModuleEncryptionMap("customers:customer_address", new[]
+        {
+            new EncryptedFieldRule("name"),
+            new EncryptedFieldRule("company_name"),
+            new EncryptedFieldRule("address_line1"),
+            new EncryptedFieldRule("address_line2"),
+            new EncryptedFieldRule("city"),
+            new EncryptedFieldRule("region"),
+            new EncryptedFieldRule("postal_code"),
+            new EncryptedFieldRule("country"),
+            new EncryptedFieldRule("building_number"),
+            new EncryptedFieldRule("flat_number"),
+        }),
+        new ModuleEncryptionMap("customers:customer_deal", new[]
+        {
+            new EncryptedFieldRule("title"),
+            new EncryptedFieldRule("description"),
+        }),
+        new ModuleEncryptionMap("customers:customer_activity", new[]
+        {
+            new EncryptedFieldRule("subject"),
+            new EncryptedFieldRule("body"),
+        }),
+        new ModuleEncryptionMap("customers:customer_comment", new[]
+        {
+            new EncryptedFieldRule("body"),
+        }),
+    };
+
+    /// <summary>CLR entity types encrypted at rest, mapped to their upstream entity_id (encryption.ts).</summary>
+    public IReadOnlyDictionary<Type, string> EncryptedEntityTypes { get; } = new Dictionary<Type, string>
+    {
+        [typeof(CustomerEntity)] = "customers:customer_entity",
+        [typeof(CustomerPersonProfile)] = "customers:customer_person_profile",
+        [typeof(CustomerCompanyProfile)] = "customers:customer_company_profile",
+        [typeof(CustomerAddress)] = "customers:customer_address",
+        [typeof(CustomerDeal)] = "customers:customer_deal",
+        [typeof(CustomerActivity)] = "customers:customer_activity",
+        [typeof(CustomerComment)] = "customers:customer_comment",
+    };
+
+    // -------------------------------------------------------------------------------------------
     // Notifications — 2 types (notifications.ts), both expiresAfterHours 168 (7 days).
     // -------------------------------------------------------------------------------------------
     public IReadOnlyList<NotificationTypeDefinition> NotificationTypes { get; } = new[]

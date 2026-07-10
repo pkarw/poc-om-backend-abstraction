@@ -271,12 +271,24 @@ public static class CustomersSeeder
         var now = DateTimeOffset.UtcNow;
         var seeded = 0;
 
-        // 1) Example companies + people (guarded by display name).
+        // display_name / title are ENCRYPTED at rest, so a SQL `WHERE display_name = 'X'` compares
+        // ciphertext and never matches. Instead load the candidate rows filtered ONLY by non-encrypted
+        // columns (kind/tenant/org/deleted) — the materialization interceptor decrypts them on load — and
+        // match names IN MEMORY. Deal↔company/person are resolved through these name→id maps (built as we
+        // go), never by re-querying an encrypted column. This also keeps the seed idempotent across boots.
+        var companyIdByName = (await db.Set<CustomerEntity>()
+                .Where(e => e.Kind == "company" && e.TenantId == tenantId && e.OrganizationId == organizationId && e.DeletedAt == null)
+                .ToListAsync(ct))
+            .GroupBy(e => e.DisplayName ?? "").ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
+        var personIdByName = (await db.Set<CustomerEntity>()
+                .Where(e => e.Kind == "person" && e.TenantId == tenantId && e.OrganizationId == organizationId && e.DeletedAt == null)
+                .ToListAsync(ct))
+            .GroupBy(e => e.DisplayName ?? "").ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
+
+        // 1) Example companies + people (idempotent via the in-memory, post-decrypt name maps).
         foreach (var ex in Examples)
         {
-            var companyExists = await db.Set<CustomerEntity>().AnyAsync(e =>
-                e.Kind == "company" && e.DisplayName == ex.Company && e.TenantId == tenantId && e.DeletedAt == null, ct);
-            if (companyExists) continue;
+            if (companyIdByName.ContainsKey(ex.Company)) continue;
 
             var company = new CustomerEntity
             {
@@ -297,10 +309,13 @@ public static class CustomersSeeder
             });
             await db.SaveChangesAsync(ct);
             await indexer.UpsertOneAsync(CustomerWriteHelpers.CompanyEntityType, company.Id.ToString(), organizationId, tenantId, "create", ct);
+            companyIdByName[ex.Company] = company.Id;
             seeded++;
 
             foreach (var p in ex.People)
             {
+                var personName = $"{p.First} {p.Last}";
+                if (personIdByName.ContainsKey(personName)) continue;
                 // Person contact lands on the entity (primary_email/primary_phone) — that is what the people
                 // LIST mapApiItem reads; the person profile carries job/department/seniority/timezone/linkedIn.
                 var person = new CustomerEntity
@@ -326,6 +341,7 @@ public static class CustomersSeeder
                 });
                 await db.SaveChangesAsync(ct);
                 await indexer.UpsertOneAsync(CustomerWriteHelpers.PersonEntityType, person.Id.ToString(), organizationId, tenantId, "create", ct);
+                personIdByName[personName] = person.Id;
                 seeded++;
             }
         }
@@ -345,17 +361,19 @@ public static class CustomersSeeder
                 stageValueToId[PipelineStageDefaults[i].Value] = stages[i].Id;
         }
 
+        // Existing deal titles (decrypted on load) for in-memory idempotency — Title is encrypted at rest.
+        var existingDealTitles = new HashSet<string>(
+            (await db.Set<CustomerDeal>()
+                .Where(x => x.TenantId == tenantId && x.OrganizationId == organizationId && x.DeletedAt == null)
+                .ToListAsync(ct)).Select(x => x.Title ?? ""), StringComparer.Ordinal);
+
         foreach (var (companyName, deals) in ExampleDeals)
         {
-            var company = await db.Set<CustomerEntity>().FirstOrDefaultAsync(e =>
-                e.Kind == "company" && e.DisplayName == companyName && e.TenantId == tenantId && e.DeletedAt == null, ct);
-            if (company is null) continue;
+            if (!companyIdByName.TryGetValue(companyName, out var companyId)) continue;
 
             foreach (var d in deals)
             {
-                var dealExists = await db.Set<CustomerDeal>().AnyAsync(x =>
-                    x.TenantId == tenantId && x.OrganizationId == organizationId && x.Title == d.Title && x.DeletedAt == null, ct);
-                if (dealExists) continue;
+                if (!existingDealTitles.Add(d.Title)) continue; // already seeded (in-memory, post-decrypt)
 
                 var resolvedStageId = stageValueToId.TryGetValue(d.StageValue, out var sid) ? (Guid?)sid : null;
                 var deal = new CustomerDeal
@@ -376,16 +394,14 @@ public static class CustomersSeeder
 
                 db.Set<CustomerDealCompanyLink>().Add(new CustomerDealCompanyLink
                 {
-                    Id = Guid.NewGuid(), DealId = deal.Id, CompanyEntityId = company.Id, CreatedAt = now,
+                    Id = Guid.NewGuid(), DealId = deal.Id, CompanyEntityId = companyId, CreatedAt = now,
                 });
                 foreach (var participant in d.People)
                 {
-                    var person = await db.Set<CustomerEntity>().FirstOrDefaultAsync(e =>
-                        e.Kind == "person" && e.DisplayName == participant.PersonName && e.TenantId == tenantId && e.DeletedAt == null, ct);
-                    if (person is null) continue;
+                    if (!personIdByName.TryGetValue(participant.PersonName, out var personId)) continue;
                     db.Set<CustomerDealPersonLink>().Add(new CustomerDealPersonLink
                     {
-                        Id = Guid.NewGuid(), DealId = deal.Id, PersonEntityId = person.Id, Role = participant.Role, CreatedAt = now,
+                        Id = Guid.NewGuid(), DealId = deal.Id, PersonEntityId = personId, Role = participant.Role, CreatedAt = now,
                     });
                 }
                 await db.SaveChangesAsync(ct);
