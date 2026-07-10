@@ -39,6 +39,15 @@ public sealed class AuditLogsModule : IModule
         "audit_logs.redo_tenant",
     };
 
+    // Upstream setup.ts defaultRoleFeatures: admin gets the audit_logs.* wildcard (so it can undo/redo
+    // any action), employee gets self-scoped view + undo. Without this the admin role couldn't undo.
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultRoleFeatures =>
+        new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["admin"] = new[] { "audit_logs.*" },
+            ["employee"] = new[] { "audit_logs.view_self", "audit_logs.undo_self" },
+        };
+
     public void ConfigureServices(IServiceCollection services)
     {
         // di.ts equivalents: the action-log persistence service + the command bus. Scoped because both
