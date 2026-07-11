@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="upstream" src="https://img.shields.io/badge/upstream-Open%20Mercato%20v0.6.5-6b5bd6" />
   <img alt="dotnet" src="https://img.shields.io/badge/.NET-9.0-512bd4?logo=dotnet&logoColor=white" />
-  <img alt="tests" src="https://img.shields.io/badge/.NET%20tests-239%20passing-3fb950" />
+  <img alt="tests" src="https://img.shields.io/badge/.NET%20tests-279%20passing-3fb950" />
   <img alt="modules" src="https://img.shields.io/badge/modules%20ported-9-3fb950" />
 </p>
 
@@ -24,7 +24,7 @@ Open Mercato's core is TypeScript + Next.js. Users keep asking: *"can the API ru
 3. 📦 **Technology packages** — one runnable API + worker skeleton per technology, all speaking PostgreSQL + Redis + BullMQ-compatible queues.
 4. 🔭 **Upstream tracking** — a pinned upstream commit and analysis docs, refreshable as Open Mercato core evolves.
 
-**Status:** the **.NET port** has **9 modules** working end-to-end — **auth**, **directory**, **dashboards**, **customers** (the full CRM: people, companies, deals, interactions), **currencies**, **dictionaries**, **entities** (custom fields), **query_index**, **health_check**, plus **audit_logs** undo/redo (239 tests pass) — a CLI, OM-identical seeding, and a **testbench** that runs the *real* Open Mercato UI against the .NET API on release **v0.6.5**. See [`GETTING_STARTED.md`](GETTING_STARTED.md).
+**Status:** the **.NET port** has **9 modules** working end-to-end — **auth**, **directory**, **dashboards**, **customers** (the full CRM: people, companies, deals, interactions), **currencies**, **dictionaries**, **entities** (custom fields), **query_index**, **health_check**, plus **audit_logs** undo/redo (279 tests pass) — a CLI, OM-identical seeding, and a **testbench** that runs the *real* Open Mercato UI against the .NET API on release **v0.6.5**. See [`GETTING_STARTED.md`](GETTING_STARTED.md).
 
 ## 🏃 Try it now
 
@@ -88,7 +88,7 @@ Every screen below is the **real Open Mercato v0.6.5 UI** — but every byte of 
 | [`upstream/`](upstream/) | Pinned upstream reference: [`UPSTREAM.md`](upstream/UPSTREAM.md) + subsystem analyses in [`upstream/analysis/`](upstream/analysis/) |
 | [`.claude/skills/`](.claude/skills/) | The 5 porting skills (see below) |
 | [`packages/python/`](packages/python/) | 🐍 FastAPI + SQLAlchemy/Alembic + official BullMQ client |
-| [`packages/dotnet/`](packages/dotnet/) | 🟣 ASP.NET Core minimal APIs + EF Core — **auth + directory + dashboards ported**, CLI, OM-identical seeding |
+| [`packages/dotnet/`](packages/dotnet/) | 🟣 ASP.NET Core minimal APIs + EF Core — **9 modules ported** (auth, directory, dashboards, customers, entities, query_index, currencies, dictionaries, audit_logs), CLI, OM-identical seeding |
 | [`packages/golang/`](packages/golang/) | 🐹 chi + pgx + golang-migrate |
 | [`testbench/`](testbench/README.md) | 🧪 Run a real Open Mercato UI against the .NET port over one shared Postgres |
 | [`GETTING_STARTED.md`](GETTING_STARTED.md) | 🏁 Step-by-step: run the port standalone, run OM against it, port the next module |
@@ -149,7 +149,7 @@ Typical flow — port a module to two technologies **simultaneously**:
 
 ## 📊 Status
 
-See [`MODULES.md`](MODULES.md) for the live module × technology matrix. The **.NET port** leads with **9 modules** ported and working (**239 tests pass**):
+See [`MODULES.md`](MODULES.md) for the live module × technology matrix. The **.NET port** leads with **9 modules** ported and working (**279 tests pass**):
 
 | Module | What the port serves |
 |---|---|
