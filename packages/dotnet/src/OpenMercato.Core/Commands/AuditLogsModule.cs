@@ -95,11 +95,105 @@ public sealed class AuditLogsModule : IModule
 
     public void MapRoutes(IEndpointRouteBuilder routes)
     {
-        // Port of api/audit-logs/actions/{undo,redo}/route.ts. The command-write infra (ActionLogService +
+        // Port of api/audit-logs/actions/{,undo,redo}/route.ts. The command-write infra (ActionLogService +
         // CommandBus.Undo/Redo + IUndoableCommand handlers) already exists; this exposes it over HTTP so
-        // the OM "Undo"/"Redo" UI works against the ported backend. (PARITY-TODO: the list + access routes.)
+        // the OM "Undo"/"Redo" UI + the changelog tab work against the ported backend.
+        routes.MapGet("/api/audit_logs/audit-logs/actions", (Func<HttpContext, Task<IResult>>)ListAsync);
         routes.MapPost("/api/audit_logs/audit-logs/actions/undo", (Func<HttpContext, Task<IResult>>)UndoAsync);
         routes.MapPost("/api/audit_logs/audit-logs/actions/redo", (Func<HttpContext, Task<IResult>>)RedoAsync);
+    }
+
+    private static async Task<IResult> ListAsync(HttpContext http)
+    {
+        var (ctx, denied) = await AuthorizeAsync(http, "audit_logs.view_self");
+        if (denied is not null) return denied;
+
+        var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var db = http.RequestServices.GetRequiredService<Data.AppDbContext>();
+        var canViewTenant = ctx!.IsSuperAdmin || await reqCtx.HasAllFeaturesAsync(ctx, new[] { "audit_logs.view_tenant" });
+
+        var qp = http.Request.Query;
+        string? Q(string k) => qp.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v) ? v.ToString().Trim() : null;
+        var resourceKind = Q("resourceKind");
+        var resourceId = Q("resourceId");
+        var actionTypes = (Q("actionType") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var fieldNames = (Q("fieldName") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var includeTotal = string.Equals(Q("includeTotal"), "true", StringComparison.OrdinalIgnoreCase);
+        var limit = int.TryParse(Q("limit"), out var l) ? Math.Clamp(l, 1, 1000) : 50;
+        var offset = int.TryParse(Q("offset"), out var o) && o >= 0 ? o : 0;
+        var sortDir = string.Equals(Q("sortDir"), "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc";
+        DateTime? after = DateTime.TryParse(Q("after"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var af) ? af : null;
+        DateTime? before = DateTime.TryParse(Q("before"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var bf) ? bf : null;
+
+        // Self-vs-tenant scope: tenant-viewers see all actors in the tenant; others see only their own.
+        var actorFilter = Q("actorUserId");
+        var query = db.Set<ActionLog>().AsNoTracking().Where(a => a.DeletedAt == null && a.TenantId == ctx.TenantId);
+        if (!canViewTenant) query = query.Where(a => a.ActorUserId == ctx.UserId);
+        else if (actorFilter is not null && Guid.TryParse(actorFilter, out var af2)) query = query.Where(a => a.ActorUserId == af2);
+        if (!canViewTenant && ctx.OrganizationId is { } org) query = query.Where(a => a.OrganizationId == null || a.OrganizationId == org);
+        if (resourceKind is not null) query = query.Where(a => a.ResourceKind == resourceKind);
+        if (resourceId is not null) query = query.Where(a => a.ResourceId == resourceId);
+        if (actionTypes.Length > 0) query = query.Where(a => a.ActionType != null && actionTypes.Contains(a.ActionType));
+        if (after is { } afv) query = query.Where(a => a.CreatedAt >= afv);
+        if (before is { } bfv) query = query.Where(a => a.CreatedAt < bfv);
+
+        var rows = await query.ToListAsync();
+        // fieldName filter: entries whose changes/changed-fields include any requested field (in-memory).
+        if (fieldNames.Length > 0)
+            rows = rows.Where(a => fieldNames.Any(f =>
+                (a.ChangedFields is { } cf && cf.Contains(f))
+                || (ParseJson(a.ChangesJson) is { ValueKind: JsonValueKind.Object } ce && ce.TryGetProperty(f, out _)))).ToList();
+
+        rows = (sortDir == "asc"
+            ? rows.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id)
+            : rows.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)).ToList();
+
+        var total = rows.Count;
+        var page = rows.Skip(offset).Take(limit).Select(Project).ToList();
+
+        object body = includeTotal
+            ? new { items = page, total, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)limit)) }
+            : new { items = page };
+        return Results.Json(body, Web, statusCode: 200);
+    }
+
+    private static object Project(ActionLog a) => new
+    {
+        id = a.Id.ToString(),
+        commandId = a.CommandId,
+        actionLabel = a.ActionLabel,
+        actionType = a.ActionType,
+        executionState = a.ExecutionState,
+        actorUserId = a.ActorUserId?.ToString(),
+        // PARITY-TODO: actor/tenant/org name hydration needs the Auth decryption service (cross-layer from Core).
+        actorUserName = (string?)null,
+        tenantId = a.TenantId?.ToString(),
+        tenantName = (string?)null,
+        organizationId = a.OrganizationId?.ToString(),
+        organizationName = (string?)null,
+        resourceKind = a.ResourceKind,
+        resourceId = a.ResourceId,
+        parentResourceKind = a.ParentResourceKind,
+        parentResourceId = a.ParentResourceId,
+        undoToken = a.UndoToken,
+        createdAt = a.CreatedAt.ToUniversalTime().ToString("o"),
+        updatedAt = a.UpdatedAt.ToUniversalTime().ToString("o"),
+        snapshotBefore = ParseJsonNullable(a.SnapshotBefore),
+        snapshotAfter = ParseJsonNullable(a.SnapshotAfter),
+        changes = ParseJsonNullable(a.ChangesJson),
+        context = ParseJsonNullable(a.ContextJson),
+    };
+
+    private static JsonElement ParseJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return default;
+        try { using var doc = JsonDocument.Parse(json); return doc.RootElement.Clone(); } catch { return default; }
+    }
+
+    private static object? ParseJsonNullable(string? json)
+    {
+        var el = ParseJson(json);
+        return el.ValueKind == JsonValueKind.Undefined ? null : (object)el;
     }
 
     private static async Task<IResult> UndoAsync(HttpContext http)
