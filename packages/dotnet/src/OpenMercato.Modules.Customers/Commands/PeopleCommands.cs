@@ -126,6 +126,7 @@ public sealed class UpdatePersonCommand
 {
     public string CommandId => "customers.people.update";
     private CustomerEntitySnapshot? _before;
+    private CustomerEntitySnapshot? _after;
 
     public async Task<PersonResult> ExecuteAsync(PersonUpdateInput input, CommandContext ctx, IServiceProvider services)
     {
@@ -161,6 +162,7 @@ public sealed class UpdatePersonCommand
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
         await CustomerWriteHelpers.PersistCustomFieldsAsync(services, CustomerWriteHelpers.PersonEntityType, entity.Id, input.Body, ctx);
+        _after = Snapshots.Of(entity);
 
         return new PersonResult(entity.Id.ToString(), profile?.Id.ToString(), entity.UpdatedAt);
     }
@@ -173,6 +175,7 @@ public sealed class UpdatePersonCommand
         TenantId = _before?.TenantId,
         OrganizationId = _before?.OrganizationId,
         SnapshotBefore = _before,
+        SnapshotAfter = _after,
     };
 
     public async Task UndoAsync(ActionLog log, CommandContext ctx, IServiceProvider services)

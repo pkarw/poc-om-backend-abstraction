@@ -194,6 +194,22 @@ public sealed class CommandBus
             ChangesJson = Serialize(meta?.Changes),
             ContextJson = Serialize(meta?.Context),
         };
+
+        // Auto-diff before/after snapshots into changes when the handler didn't supply an explicit diff
+        // (upstream deriveActionLogChangedFields). Populates the changelog's field-level rows + the
+        // ActionType/ChangedFields/PrimaryChangedField projection columns used by filters/export.
+        if (log.ChangesJson is null && log.SnapshotBefore is not null && log.SnapshotAfter is not null)
+        {
+            var diff = ActionLogProjection.DiffSnapshots(log.SnapshotBefore, log.SnapshotAfter);
+            if (diff.Count > 0)
+            {
+                log.ChangesJson = JsonSerializer.Serialize(diff, JsonOptions);
+                log.ChangedFields = diff.Keys.ToArray();
+                log.PrimaryChangedField = diff.Keys.First();
+            }
+        }
+        log.ActionType ??= ActionLogProjection.DeriveActionType(commandId);
+
         return await _actionLogs.LogAsync(log, ct);
     }
 
