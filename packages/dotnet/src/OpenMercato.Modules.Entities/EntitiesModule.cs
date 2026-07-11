@@ -164,6 +164,10 @@ public sealed class EntitiesModule : IModule
     public void MapRoutes(IEndpointRouteBuilder routes)
     {
         DefinitionsRoutes.Map(routes);
+        DefinitionsManageRoutes.Map(routes);
+        EntitiesRegistryRoutes.Map(routes);
+        EncryptionRoutes.Map(routes);
+        SidebarEntitiesRoutes.Map(routes);
         RecordsRoutes.Map(routes);
     }
 }
