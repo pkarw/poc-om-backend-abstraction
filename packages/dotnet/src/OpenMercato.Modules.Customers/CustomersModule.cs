@@ -346,6 +346,7 @@ public sealed class CustomersModule : IModule
         // people/companies base rows (customer_entities + satellite). Registered here (customers loads
         // after query_index) so it wins over the generic storage resolver and delegates the rest to it.
         services.AddScoped<OpenMercato.Modules.QueryIndex.Lib.IIndexBaseRowResolver, Lib.CustomersIndexBaseRowResolver>();
+        services.AddScoped<OpenMercato.Core.Commands.IAuditLogDisplayDirectory, Lib.AuditLogDisplayDirectory>();
     }
 
     /// <summary>CLI commands (cli.ts subset): <c>customers-seed</c> installs CE defs + Phase-1 seed data.</summary>

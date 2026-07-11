@@ -123,7 +123,9 @@ public sealed class AuditLogsModule : IModule
         var offset = int.TryParse(Q("offset"), out var o) && o >= 0 ? o : (pageNum - 1) * pageSize;
 
         var total = rows.Count;
-        var items = rows.Skip(offset).Take(pageSize).Select(Project).ToList();
+        var pageRows = rows.Skip(offset).Take(pageSize).ToList();
+        var maps = await HydrateAsync(http, pageRows);
+        var items = pageRows.Select(a => Project(a, maps)).ToList();
         // Upstream always returns the envelope (includeTotal is a legacy no-op); page derived from offset.
         return Results.Json(new
         {
@@ -200,11 +202,14 @@ public sealed class AuditLogsModule : IModule
 
         var all = await LoadFilteredAsync(http, ctx, canViewTenant);
         var cap = int.TryParse(http.Request.Query["limit"], out var lm) && lm > 0 ? Math.Clamp(lm, 1, 1000) : 1000;
+        var capped = all.Take(cap).ToList();
+        var maps = await HydrateAsync(http, capped);
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        foreach (var a in all.Take(cap))
+        foreach (var a in capped)
         {
             var when = a.CreatedAt.ToUniversalTime().ToString("o");
-            var user = a.ActorUserId?.ToString() ?? "System";
+            var user = a.ActorUserId is { } au && maps.Users.TryGetValue(au, out var un) ? un
+                : a.ActorUserId?.ToString() ?? "System";
             var action = DeriveAction(a);
             var source = DeriveSource(a);
             var changes = ChangeRows(a.ChangesJson);
@@ -275,7 +280,18 @@ public sealed class AuditLogsModule : IModule
         _ => el.GetRawText(),
     };
 
-    private static object Project(ActionLog a) => new
+    /// <summary>Resolve actor/tenant/org display names for the page via the optional directory (Customers-side impl).</summary>
+    private static async Task<AuditLogDisplayMaps> HydrateAsync(HttpContext http, IReadOnlyList<ActionLog> rows)
+    {
+        var dir = http.RequestServices.GetService<IAuditLogDisplayDirectory>();
+        if (dir is null || rows.Count == 0) return AuditLogDisplayMaps.Empty;
+        var users = rows.Where(r => r.ActorUserId is not null).Select(r => r.ActorUserId!.Value).Distinct().ToList();
+        var tenants = rows.Where(r => r.TenantId is not null).Select(r => r.TenantId!.Value).Distinct().ToList();
+        var orgs = rows.Where(r => r.OrganizationId is not null).Select(r => r.OrganizationId!.Value).Distinct().ToList();
+        return await dir.ResolveAsync(users, tenants, orgs);
+    }
+
+    private static object Project(ActionLog a, AuditLogDisplayMaps maps) => new
     {
         id = a.Id.ToString(),
         commandId = a.CommandId,
@@ -283,12 +299,11 @@ public sealed class AuditLogsModule : IModule
         actionType = a.ActionType,
         executionState = a.ExecutionState,
         actorUserId = a.ActorUserId?.ToString(),
-        // PARITY-TODO: actor/tenant/org name hydration needs the Auth decryption service (cross-layer from Core).
-        actorUserName = (string?)null,
+        actorUserName = a.ActorUserId is { } au && maps.Users.TryGetValue(au, out var un) ? un : null,
         tenantId = a.TenantId?.ToString(),
-        tenantName = (string?)null,
+        tenantName = a.TenantId is { } t && maps.Tenants.TryGetValue(t, out var tn) ? tn : null,
         organizationId = a.OrganizationId?.ToString(),
-        organizationName = (string?)null,
+        organizationName = a.OrganizationId is { } og && maps.Organizations.TryGetValue(og, out var on) ? on : null,
         resourceKind = a.ResourceKind,
         resourceId = a.ResourceId,
         parentResourceKind = a.ParentResourceKind,
