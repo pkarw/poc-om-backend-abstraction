@@ -99,6 +99,7 @@ public sealed class AuditLogsModule : IModule
         // CommandBus.Undo/Redo + IUndoableCommand handlers) already exists; this exposes it over HTTP so
         // the OM "Undo"/"Redo" UI + the changelog tab work against the ported backend.
         routes.MapGet("/api/audit_logs/audit-logs/actions", (Func<HttpContext, Task<IResult>>)ListAsync);
+        routes.MapGet("/api/audit_logs/audit-logs/actions/export", (Func<HttpContext, Task<IResult>>)ExportAsync);
         routes.MapPost("/api/audit_logs/audit-logs/actions/undo", (Func<HttpContext, Task<IResult>>)UndoAsync);
         routes.MapPost("/api/audit_logs/audit-logs/actions/redo", (Func<HttpContext, Task<IResult>>)RedoAsync);
     }
@@ -109,53 +110,170 @@ public sealed class AuditLogsModule : IModule
         if (denied is not null) return denied;
 
         var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
-        var db = http.RequestServices.GetRequiredService<Data.AppDbContext>();
         var canViewTenant = ctx!.IsSuperAdmin || await reqCtx.HasAllFeaturesAsync(ctx, new[] { "audit_logs.view_tenant" });
 
+        var qp = http.Request.Query;
+        string? Q(string k) => qp.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v) ? v.ToString().Trim() : null;
+        var rows = await LoadFilteredAsync(http, ctx, canViewTenant);
+
+        // Pagination: pageSize wins (clamp 1..200), else legacy limit (1..1000), else 50; offset else (page-1)*pageSize.
+        var rawLimit = int.TryParse(Q("limit"), out var l) && l > 0 ? Math.Clamp(l, 1, 1000) : 0;
+        var pageSize = int.TryParse(Q("pageSize"), out var psv) && psv > 0 ? Math.Clamp(psv, 1, 200) : (rawLimit > 0 ? rawLimit : 50);
+        var pageNum = int.TryParse(Q("page"), out var pgv) && pgv > 0 ? pgv : 1;
+        var offset = int.TryParse(Q("offset"), out var o) && o >= 0 ? o : (pageNum - 1) * pageSize;
+
+        var total = rows.Count;
+        var items = rows.Skip(offset).Take(pageSize).Select(Project).ToList();
+        // Upstream always returns the envelope (includeTotal is a legacy no-op); page derived from offset.
+        return Results.Json(new
+        {
+            items,
+            canViewTenant,
+            page = pageSize > 0 ? (offset / pageSize) + 1 : 1,
+            pageSize,
+            total,
+            totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
+        }, Web, statusCode: 200);
+    }
+
+    /// <summary>Apply the shared scope + filter + sort (everything except pagination), returning the rows.</summary>
+    private static async Task<List<ActionLog>> LoadFilteredAsync(HttpContext http, CommandContext ctx, bool canViewTenant)
+    {
+        var db = http.RequestServices.GetRequiredService<Data.AppDbContext>();
         var qp = http.Request.Query;
         string? Q(string k) => qp.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v) ? v.ToString().Trim() : null;
         var resourceKind = Q("resourceKind");
         var resourceId = Q("resourceId");
         var actionTypes = (Q("actionType") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var fieldNames = (Q("fieldName") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var includeTotal = string.Equals(Q("includeTotal"), "true", StringComparison.OrdinalIgnoreCase);
-        var limit = int.TryParse(Q("limit"), out var l) ? Math.Clamp(l, 1, 1000) : 50;
-        var offset = int.TryParse(Q("offset"), out var o) && o >= 0 ? o : 0;
+        var includeRelated = string.Equals(Q("includeRelated"), "true", StringComparison.OrdinalIgnoreCase);
+        var undoableOnly = string.Equals(Q("undoableOnly"), "true", StringComparison.OrdinalIgnoreCase);
         var sortDir = string.Equals(Q("sortDir"), "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc";
         DateTime? after = DateTime.TryParse(Q("after"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var af) ? af : null;
         DateTime? before = DateTime.TryParse(Q("before"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var bf) ? bf : null;
 
-        // Self-vs-tenant scope: tenant-viewers see all actors in the tenant; others see only their own.
         var actorFilter = Q("actorUserId");
         var query = db.Set<ActionLog>().AsNoTracking().Where(a => a.DeletedAt == null && a.TenantId == ctx.TenantId);
         if (!canViewTenant) query = query.Where(a => a.ActorUserId == ctx.UserId);
         else if (actorFilter is not null && Guid.TryParse(actorFilter, out var af2)) query = query.Where(a => a.ActorUserId == af2);
         if (!canViewTenant && ctx.OrganizationId is { } org) query = query.Where(a => a.OrganizationId == null || a.OrganizationId == org);
-        if (resourceKind is not null) query = query.Where(a => a.ResourceKind == resourceKind);
-        if (resourceId is not null) query = query.Where(a => a.ResourceId == resourceId);
+        if (resourceKind is not null && resourceId is not null && includeRelated)
+            query = query.Where(a =>
+                (a.ResourceKind == resourceKind && a.ResourceId == resourceId)
+                || (a.ParentResourceKind == resourceKind && a.ParentResourceId == resourceId)
+                || (a.RelatedResourceKind == resourceKind && a.RelatedResourceId == resourceId));
+        else
+        {
+            if (resourceKind is not null) query = query.Where(a => a.ResourceKind == resourceKind);
+            if (resourceId is not null) query = query.Where(a => a.ResourceId == resourceId);
+        }
         if (actionTypes.Length > 0) query = query.Where(a => a.ActionType != null && actionTypes.Contains(a.ActionType));
+        if (undoableOnly) query = query.Where(a => a.UndoToken != null);
         if (after is { } afv) query = query.Where(a => a.CreatedAt >= afv);
         if (before is { } bfv) query = query.Where(a => a.CreatedAt < bfv);
 
         var rows = await query.ToListAsync();
-        // fieldName filter: entries whose changes/changed-fields include any requested field (in-memory).
         if (fieldNames.Length > 0)
             rows = rows.Where(a => fieldNames.Any(f =>
                 (a.ChangedFields is { } cf && cf.Contains(f))
                 || (ParseJson(a.ChangesJson) is { ValueKind: JsonValueKind.Object } ce && ce.TryGetProperty(f, out _)))).ToList();
 
-        rows = (sortDir == "asc"
+        return (sortDir == "asc"
             ? rows.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id)
             : rows.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)).ToList();
-
-        var total = rows.Count;
-        var page = rows.Skip(offset).Take(limit).Select(Project).ToList();
-
-        object body = includeTotal
-            ? new { items = page, total, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)limit)) }
-            : new { items = page };
-        return Results.Json(body, Web, statusCode: 200);
     }
+
+    private static readonly IReadOnlyList<CrudExportColumn> ExportColumns = new[]
+    {
+        new CrudExportColumn("when", "When"), new CrudExportColumn("user", "User"),
+        new CrudExportColumn("action", "Action"), new CrudExportColumn("field", "Field"),
+        new CrudExportColumn("oldValue", "Old Value"), new CrudExportColumn("newValue", "New Value"),
+        new CrudExportColumn("source", "Source"),
+    };
+
+    private static async Task<IResult> ExportAsync(HttpContext http)
+    {
+        var (ctx, denied) = await AuthorizeAsync(http, "audit_logs.view_self");
+        if (denied is not null) return denied;
+        var reqCtx = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var canViewTenant = ctx!.IsSuperAdmin || await reqCtx.HasAllFeaturesAsync(ctx, new[] { "audit_logs.view_tenant" });
+
+        var all = await LoadFilteredAsync(http, ctx, canViewTenant);
+        var cap = int.TryParse(http.Request.Query["limit"], out var lm) && lm > 0 ? Math.Clamp(lm, 1, 1000) : 1000;
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        foreach (var a in all.Take(cap))
+        {
+            var when = a.CreatedAt.ToUniversalTime().ToString("o");
+            var user = a.ActorUserId?.ToString() ?? "System";
+            var action = DeriveAction(a);
+            var source = DeriveSource(a);
+            var changes = ChangeRows(a.ChangesJson);
+            if (changes.Count == 0)
+                rows.Add(Row(when, user, action, "", "", "", source));
+            else
+                foreach (var (field, oldV, newV) in changes) rows.Add(Row(when, user, action, field, oldV, newV, source));
+        }
+
+        var serialized = CrudExport.Serialize(new PreparedExport(ExportColumns, rows), CrudExport.Csv);
+        http.Response.Headers["Content-Disposition"] = "attachment; filename=\"changelog-export.csv\"";
+        return Results.Text(serialized.Body, "text/csv; charset=utf-8");
+    }
+
+    private static IReadOnlyDictionary<string, object?> Row(string when, string user, string action, string field, string oldV, string newV, string source) =>
+        new Dictionary<string, object?> { ["when"] = when, ["user"] = user, ["action"] = action, ["field"] = field, ["oldValue"] = oldV, ["newValue"] = newV, ["source"] = source };
+
+    /// <summary>Action label: explicit actionType, else the command's trailing verb, else the label.</summary>
+    private static string DeriveAction(ActionLog a)
+    {
+        var verb = a.ActionType;
+        if (string.IsNullOrEmpty(verb) && !string.IsNullOrEmpty(a.CommandId))
+        {
+            var last = a.CommandId.Split('.').LastOrDefault();
+            if (last is "create" or "update" or "edit" or "delete" or "assign") verb = last;
+        }
+        if (!string.IsNullOrEmpty(verb)) return char.ToUpperInvariant(verb[0]) + verb[1..];
+        return a.ActionLabel ?? "Action";
+    }
+
+    private static string DeriveSource(ActionLog a)
+    {
+        if (!string.IsNullOrEmpty(a.SourceKey)) return a.SourceKey.ToUpperInvariant();
+        if (ParseJson(a.ContextJson) is { ValueKind: JsonValueKind.Object } ctxEl
+            && ctxEl.TryGetProperty("source", out var s) && s.ValueKind == JsonValueKind.String)
+            return (s.GetString() ?? "").ToUpperInvariant();
+        return a.ActorUserId is null ? "SYSTEM" : "UI";
+    }
+
+    /// <summary>Flatten a changes doc <c>{ field: { from, to } }</c> (or {old,new}) into (field, old, new) rows.</summary>
+    private static List<(string Field, string Old, string New)> ChangeRows(string? changesJson)
+    {
+        var list = new List<(string, string, string)>();
+        var el = ParseJson(changesJson);
+        if (el.ValueKind != JsonValueKind.Object) return list;
+        foreach (var prop in el.EnumerateObject())
+        {
+            string old = "", @new = "";
+            if (prop.Value.ValueKind == JsonValueKind.Object)
+            {
+                if (prop.Value.TryGetProperty("from", out var f)) old = FormatVal(f);
+                else if (prop.Value.TryGetProperty("old", out var f2)) old = FormatVal(f2);
+                if (prop.Value.TryGetProperty("to", out var t)) @new = FormatVal(t);
+                else if (prop.Value.TryGetProperty("new", out var t2)) @new = FormatVal(t2);
+            }
+            else @new = FormatVal(prop.Value);
+            list.Add((prop.Name, old, @new));
+        }
+        return list;
+    }
+
+    private static string FormatVal(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.Undefined => "",
+        JsonValueKind.String => el.GetString() ?? "",
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        _ => el.GetRawText(),
+    };
 
     private static object Project(ActionLog a) => new
     {
