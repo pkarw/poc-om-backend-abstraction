@@ -123,7 +123,8 @@ public sealed class CompaniesRoutes : ICustomersRouteGroup
 
         // Best-effort enrichment of the timeline collections, include-token gated (see CustomerDetailEnrichment).
         var tokens = CustomerDetailEnrichment.ParseIncludeTokens(http);
-        var enriched = await CustomerDetailEnrichment.LoadAsync(db, entity, isCompany: true, tokens);
+        var enc = http.RequestServices.GetService<OpenMercato.Modules.Auth.Security.TenantDataEncryptionService>();
+        var enriched = await CustomerDetailEnrichment.LoadAsync(db, enc, entity, isCompany: true, tokens);
 
         // Best-effort deal KPIs from the company's linked deals (LTV/tenure/activity trend still deferred).
         var companyDealIds = await db.Set<CustomerDealCompanyLink>().AsNoTracking().Where(l => l.CompanyEntityId == companyId).Select(l => l.DealId).ToListAsync();

@@ -226,7 +226,8 @@ public sealed class PeopleRoutes : ICustomersRouteGroup
 
         // Best-effort enrichment of the timeline collections, include-token gated (see CustomerDetailEnrichment).
         var tokens = CustomerDetailEnrichment.ParseIncludeTokens(http);
-        var enriched = await CustomerDetailEnrichment.LoadAsync(db, entity, isCompany: false, tokens);
+        var enc = http.RequestServices.GetService<OpenMercato.Modules.Auth.Security.TenantDataEncryptionService>();
+        var enriched = await CustomerDetailEnrichment.LoadAsync(db, enc, entity, isCompany: false, tokens);
 
         return CustomersHttp.Json(new
         {

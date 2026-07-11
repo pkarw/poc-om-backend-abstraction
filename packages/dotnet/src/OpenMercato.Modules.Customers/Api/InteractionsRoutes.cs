@@ -9,6 +9,7 @@ using OpenMercato.Core.Commands;
 using OpenMercato.Core.Crud;
 using OpenMercato.Core.Data;
 using OpenMercato.Core.Events;
+using OpenMercato.Modules.Auth.Security;
 using OpenMercato.Modules.Customers.Commands;
 using OpenMercato.Modules.Customers.Data;
 using OpenMercato.Modules.Customers.Lib;
@@ -150,14 +151,18 @@ public sealed class InteractionsRoutes : ICustomersRouteGroup
         var hasMore = rows.Count > limit;
         var page = rows.Take(limit).ToList();
 
-        // Deal titles (author name/email require the auth User table — PARITY-TODO, left null like Phase 1).
+        // Deal titles + author identity (name/email decrypted from the auth User table).
         var dealIds = page.Where(r => r.DealId is not null).Select(r => r.DealId!.Value).Distinct().ToList();
         var dealTitles = dealIds.Count == 0
             ? new Dictionary<Guid, string>()
             : (await db.Set<CustomerDeal>().AsNoTracking().Where(d => dealIds.Contains(d.Id)).ToListAsync())
                 .ToDictionary(d => d.Id, d => d.Title);
 
-        var items = page.Select(r => Project(r, dealTitles)).ToList();
+        var enc = http.RequestServices.GetService<TenantDataEncryptionService>();
+        var authors = await CustomerUserDirectory.ResolveAsync(
+            db, enc, CustomerUserDirectory.Ids(page.Select(r => r.AuthorUserId)));
+
+        var items = page.Select(r => Project(r, dealTitles, authors)).ToList();
         var codec = http.RequestServices.GetRequiredService<ICrudCustomFields>();
         await codec.MergeIntoListItemsAsync(InteractionCompat.InteractionEntityType, items, ctx!);
 
@@ -171,7 +176,9 @@ public sealed class InteractionsRoutes : ICustomersRouteGroup
     private static DateTimeOffset Coalesce(CustomerInteraction i) =>
         i.OccurredAt ?? i.ScheduledAt ?? i.CreatedAt;
 
-    private static IDictionary<string, object?> Project(CustomerInteraction r, IReadOnlyDictionary<Guid, string> dealTitles) => new Dictionary<string, object?>
+    private static IDictionary<string, object?> Project(
+        CustomerInteraction r, IReadOnlyDictionary<Guid, string> dealTitles,
+        IReadOnlyDictionary<Guid, CustomerUserDirectory.UserIdentity> authors) => new Dictionary<string, object?>
     {
         ["id"] = r.Id.ToString(),
         ["entityId"] = r.EntityId.ToString(),
@@ -204,8 +211,8 @@ public sealed class InteractionsRoutes : ICustomersRouteGroup
         ["tenantId"] = r.TenantId.ToString(),
         ["createdAt"] = CustomersHttp.Iso(r.CreatedAt),
         ["updatedAt"] = CustomersHttp.Iso(r.UpdatedAt),
-        ["authorName"] = null, // PARITY-TODO: resolve via auth User (cross-module), left null like Phase 1 viewer.
-        ["authorEmail"] = null,
+        ["authorName"] = r.AuthorUserId is { } au && authors.TryGetValue(au, out var ai) ? ai.Name : null,
+        ["authorEmail"] = r.AuthorUserId is { } au2 && authors.TryGetValue(au2, out var ai2) ? ai2.Email : null,
         ["dealTitle"] = r.DealId is { } d && dealTitles.TryGetValue(d, out var t) ? t : null,
     };
 

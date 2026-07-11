@@ -79,9 +79,13 @@ public sealed class ActivitiesRoutes : ICustomersRouteGroup
         if (!string.IsNullOrEmpty(activityType)) legacyQ = legacyQ.Where(a => a.ActivityType == activityType);
         var legacy = await legacyQ.ToListAsync();
 
+        var enc = http.RequestServices.GetService<OpenMercato.Modules.Auth.Security.TenantDataEncryptionService>();
+        var authors = await CustomerUserDirectory.ResolveAsync(db, enc,
+            CustomerUserDirectory.Ids(canonical.Select(i => i.AuthorUserId), legacy.Select(a => a.AuthorUserId)));
+
         var rows = new List<(string? CreatedAt, object Item)>();
-        rows.AddRange(canonical.Select(i => (CustomersHttp.Iso(i.CreatedAt), MapCanonical(i))));
-        rows.AddRange(legacy.Where(a => !bridgedActivityIds.Contains(a.Id)).Select(a => (CustomersHttp.Iso(a.CreatedAt), MapLegacy(a))));
+        rows.AddRange(canonical.Select(i => (CustomersHttp.Iso(i.CreatedAt), MapCanonical(i, authors))));
+        rows.AddRange(legacy.Where(a => !bridgedActivityIds.Contains(a.Id)).Select(a => (CustomersHttp.Iso(a.CreatedAt), MapLegacy(a, authors))));
 
         var ordered = rows.OrderByDescending(r => r.CreatedAt, StringComparer.Ordinal).Select(r => r.Item).ToList();
         var total = ordered.Count;
@@ -90,7 +94,7 @@ public sealed class ActivitiesRoutes : ICustomersRouteGroup
         // PARITY-TODO: author name/email + custom-value hydration (interactionReadModel) deferred.
     }
 
-    private static object MapCanonical(CustomerInteraction i) => new
+    private static object MapCanonical(CustomerInteraction i, IReadOnlyDictionary<Guid, CustomerUserDirectory.UserIdentity> authors) => new
     {
         id = i.Id.ToString(),
         activityType = i.InteractionType,
@@ -102,14 +106,14 @@ public sealed class ActivitiesRoutes : ICustomersRouteGroup
         appearanceColor = i.AppearanceColor,
         entityId = i.EntityId.ToString(),
         authorUserId = i.AuthorUserId?.ToString(),
-        authorName = (string?)null,
-        authorEmail = (string?)null,
+        authorName = i.AuthorUserId is { } au && authors.TryGetValue(au, out var ai) ? ai.Name : null,
+        authorEmail = i.AuthorUserId is { } au2 && authors.TryGetValue(au2, out var ai2) ? ai2.Email : null,
         dealId = i.DealId?.ToString(),
         dealTitle = (string?)null,
         customValues = (object?)null,
     };
 
-    private static object MapLegacy(CustomerActivity a) => new
+    private static object MapLegacy(CustomerActivity a, IReadOnlyDictionary<Guid, CustomerUserDirectory.UserIdentity> authors) => new
     {
         id = a.Id.ToString(),
         activityType = a.ActivityType,
@@ -121,8 +125,8 @@ public sealed class ActivitiesRoutes : ICustomersRouteGroup
         appearanceColor = a.AppearanceColor,
         entityId = a.EntityId.ToString(),
         authorUserId = a.AuthorUserId?.ToString(),
-        authorName = (string?)null,
-        authorEmail = (string?)null,
+        authorName = a.AuthorUserId is { } au && authors.TryGetValue(au, out var ai) ? ai.Name : null,
+        authorEmail = a.AuthorUserId is { } au2 && authors.TryGetValue(au2, out var ai2) ? ai2.Email : null,
         dealId = a.DealId?.ToString(),
         dealTitle = (string?)null,
         customValues = (object?)null,

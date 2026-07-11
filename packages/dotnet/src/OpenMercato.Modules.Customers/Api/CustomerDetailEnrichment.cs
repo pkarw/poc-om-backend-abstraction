@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OpenMercato.Core.Data;
+using OpenMercato.Modules.Auth.Security;
 using OpenMercato.Modules.Customers.Data;
 using OpenMercato.Modules.Customers.Lib;
 
@@ -42,7 +43,13 @@ internal static class CustomerDetailEnrichment
         return tokens;
     }
 
-    public static async Task<Result> LoadAsync(AppDbContext db, CustomerEntity entity, bool isCompany, HashSet<string> tokens)
+    private static string? NameOf(IReadOnlyDictionary<Guid, CustomerUserDirectory.UserIdentity> m, Guid? id) =>
+        id is { } g && m.TryGetValue(g, out var u) ? u.Name : null;
+    private static string? EmailOf(IReadOnlyDictionary<Guid, CustomerUserDirectory.UserIdentity> m, Guid? id) =>
+        id is { } g && m.TryGetValue(g, out var u) ? u.Email : null;
+
+    public static async Task<Result> LoadAsync(
+        AppDbContext db, TenantDataEncryptionService encryption, CustomerEntity entity, bool isCompany, HashSet<string> tokens)
     {
         var id = entity.Id;
         var includeComments = tokens.Contains("comments") || tokens.Contains("notes");
@@ -58,13 +65,14 @@ internal static class CustomerDetailEnrichment
             var rows = await db.Set<CustomerComment>().AsNoTracking()
                 .Where(c => c.EntityId == id && c.DeletedAt == null)
                 .OrderByDescending(c => c.CreatedAt).Take(50).ToListAsync();
+            var au = await CustomerUserDirectory.ResolveAsync(db, encryption, CustomerUserDirectory.Ids(rows.Select(c => c.AuthorUserId)));
             comments = rows.Select(c => (object)new
             {
                 id = c.Id.ToString(),
                 body = c.Body,
                 authorUserId = c.AuthorUserId?.ToString(),
-                authorName = (string?)null,
-                authorEmail = (string?)null,
+                authorName = NameOf(au, c.AuthorUserId),
+                authorEmail = EmailOf(au, c.AuthorUserId),
                 dealId = c.DealId?.ToString(),
                 createdAt = CustomersHttp.Iso(c.CreatedAt),
                 appearanceIcon = c.AppearanceIcon,
@@ -88,6 +96,9 @@ internal static class CustomerDetailEnrichment
             var legacyActs = await db.Set<CustomerActivity>().AsNoTracking()
                 .Where(a => a.EntityId == id).ToListAsync();
 
+            var actAuthors = await CustomerUserDirectory.ResolveAsync(db, encryption,
+                CustomerUserDirectory.Ids(legacyActs.Select(a => a.AuthorUserId), canonicalActs.Select(i => i.AuthorUserId)));
+
             var actRows = new List<(DateTimeOffset Sort, string Id, object Item)>();
             foreach (var a in legacyActs.Where(a => !bridgedActIds.Contains(a.Id)))
                 actRows.Add((a.OccurredAt ?? a.CreatedAt, a.Id.ToString(), new
@@ -99,8 +110,8 @@ internal static class CustomerDetailEnrichment
                     occurredAt = CustomersHttp.Iso(a.OccurredAt),
                     dealId = a.DealId?.ToString(),
                     authorUserId = a.AuthorUserId?.ToString(),
-                    authorName = (string?)null,
-                    authorEmail = (string?)null,
+                    authorName = NameOf(actAuthors, a.AuthorUserId),
+                    authorEmail = EmailOf(actAuthors, a.AuthorUserId),
                     createdAt = CustomersHttp.Iso(a.CreatedAt),
                     appearanceIcon = a.AppearanceIcon,
                     appearanceColor = a.AppearanceColor,
@@ -115,8 +126,8 @@ internal static class CustomerDetailEnrichment
                     occurredAt = CustomersHttp.Iso(i.OccurredAt ?? i.ScheduledAt),
                     dealId = i.DealId?.ToString(),
                     authorUserId = i.AuthorUserId?.ToString(),
-                    authorName = (string?)null,
-                    authorEmail = (string?)null,
+                    authorName = NameOf(actAuthors, i.AuthorUserId),
+                    authorEmail = EmailOf(actAuthors, i.AuthorUserId),
                     createdAt = CustomersHttp.Iso(i.CreatedAt),
                     appearanceIcon = i.AppearanceIcon,
                     appearanceColor = i.AppearanceColor,
@@ -133,6 +144,11 @@ internal static class CustomerDetailEnrichment
             var rows = await db.Set<CustomerInteraction>().AsNoTracking()
                 .Where(i => i.EntityId == id && i.DeletedAt == null)
                 .OrderByDescending(i => i.CreatedAt).Take(50).ToListAsync();
+            var ixAuthors = await CustomerUserDirectory.ResolveAsync(db, encryption, CustomerUserDirectory.Ids(rows.Select(i => i.AuthorUserId)));
+            var ixDealIds = rows.Where(i => i.DealId is not null).Select(i => i.DealId!.Value).Distinct().ToList();
+            var ixDealTitles = ixDealIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : (await db.Set<CustomerDeal>().AsNoTracking().Where(d => ixDealIds.Contains(d.Id)).ToListAsync()).ToDictionary(d => d.Id, d => d.Title);
             interactions = rows.Select(i => (object)new
             {
                 id = i.Id.ToString(),
@@ -149,9 +165,9 @@ internal static class CustomerDetailEnrichment
                 dealId = i.DealId?.ToString(),
                 organizationId = i.OrganizationId.ToString(),
                 tenantId = i.TenantId.ToString(),
-                authorName = (string?)null,
-                authorEmail = (string?)null,
-                dealTitle = (string?)null,
+                authorName = NameOf(ixAuthors, i.AuthorUserId),
+                authorEmail = EmailOf(ixAuthors, i.AuthorUserId),
+                dealTitle = i.DealId is { } dd && ixDealTitles.TryGetValue(dd, out var dt) ? dt : null,
                 customValues = (object?)null,
                 appearanceIcon = i.AppearanceIcon,
                 appearanceColor = i.AppearanceColor,
