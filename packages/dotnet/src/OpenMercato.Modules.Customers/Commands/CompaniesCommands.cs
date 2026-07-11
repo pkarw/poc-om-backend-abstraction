@@ -135,9 +135,10 @@ public sealed class UpdateCompanyCommand
         }
 
         entity.UpdatedAt = DateTimeOffset.UtcNow;
+        // Capture before SaveChanges — the encryption interceptor rewrites encrypted columns in-place on save.
+        _after = Snapshots.Of(entity);
         await db.SaveChangesAsync();
         await CustomerWriteHelpers.PersistCustomFieldsAsync(services, CustomerWriteHelpers.CompanyEntityType, entity.Id, input.Body, ctx);
-        _after = Snapshots.Of(entity);
 
         return new CompanyResult(entity.Id.ToString(), profile?.Id.ToString(), entity.UpdatedAt);
     }

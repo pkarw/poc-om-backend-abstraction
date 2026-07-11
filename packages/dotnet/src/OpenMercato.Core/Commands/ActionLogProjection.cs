@@ -12,6 +12,8 @@ namespace OpenMercato.Core.Commands;
 public static class ActionLogProjection
 {
     private static readonly HashSet<string> Verbs = new(StringComparer.Ordinal) { "create", "update", "edit", "delete", "assign" };
+    // Bookkeeping columns that always change / are not user-meaningful — never surface them as changes.
+    private static readonly HashSet<string> IgnoredFields = new(StringComparer.OrdinalIgnoreCase) { "updatedAt", "createdAt", "id" };
 
     /// <summary>Diff two serialized snapshot JSON objects into an ordered <c>field → {from,to}</c> map of changes.</summary>
     public static IReadOnlyDictionary<string, object?> DiffSnapshots(string beforeJson, string afterJson)
@@ -30,6 +32,7 @@ public static class ActionLogProjection
 
         foreach (var key in keys)
         {
+            if (IgnoredFields.Contains(key)) continue;
             var hasB = before.TryGetProperty(key, out var b);
             var hasA = after.TryGetProperty(key, out var a);
             var bText = hasB ? b.GetRawText() : "null";

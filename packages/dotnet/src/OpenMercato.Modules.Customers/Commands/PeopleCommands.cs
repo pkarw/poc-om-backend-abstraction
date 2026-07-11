@@ -160,9 +160,12 @@ public sealed class UpdatePersonCommand
         }
 
         entity.UpdatedAt = DateTimeOffset.UtcNow;
+        // Capture the after-snapshot BEFORE SaveChanges — the encryption interceptor rewrites the entity's
+        // encrypted columns (displayName/email/phone) to ciphertext in-place during save, so a post-save
+        // snapshot would diff plaintext→ciphertext.
+        _after = Snapshots.Of(entity);
         await db.SaveChangesAsync();
         await CustomerWriteHelpers.PersistCustomFieldsAsync(services, CustomerWriteHelpers.PersonEntityType, entity.Id, input.Body, ctx);
-        _after = Snapshots.Of(entity);
 
         return new PersonResult(entity.Id.ToString(), profile?.Id.ToString(), entity.UpdatedAt);
     }
