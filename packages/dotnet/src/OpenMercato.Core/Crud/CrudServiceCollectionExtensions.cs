@@ -17,6 +17,7 @@ public static class CrudServiceCollectionExtensions
         services.TryAddScoped<ICrudCustomFields, NoopCrudCustomFields>();
         services.TryAddScoped<ICrudIndexer, NoopCrudIndexer>();
         services.TryAddScoped<ICrudIndexQuery, NoopCrudIndexQuery>();
+        services.TryAddScoped<IEntityLookupQuery, NoopEntityLookupQuery>();
         // Fail-closed auth bridge — the Auth module registers the real ICrudRequestContext.
         services.TryAddScoped<ICrudRequestContext, DefaultCrudRequestContext>();
         return services;

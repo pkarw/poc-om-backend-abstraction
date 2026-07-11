@@ -168,6 +168,7 @@ public sealed class EntitiesModule : IModule
         EntitiesRegistryRoutes.Map(routes);
         EncryptionRoutes.Map(routes);
         SidebarEntitiesRoutes.Map(routes);
+        RelationsOptionsRoutes.Map(routes);
         RecordsRoutes.Map(routes);
     }
 }

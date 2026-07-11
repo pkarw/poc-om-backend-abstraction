@@ -120,6 +120,41 @@ public sealed class NoopCrudIndexQuery : ICrudIndexQuery
         => Task.FromResult<CrudIndexQueryResult?>(null);
 }
 
+/// <summary>A request to look up relation-picker option rows (upstream relations/options queryEngine call).</summary>
+public sealed record EntityLookupRequest(
+    string EntityType,
+    Guid? TenantId,
+    IReadOnlyList<Guid>? OrganizationIds,
+    IReadOnlyList<string> Ids,
+    string? Q,
+    string LabelField,
+    IReadOnlyList<string> Fields,
+    int PageSize);
+
+/// <summary>
+/// Read-side lookup extension point that returns whole DOC rows (not just ids) for an entity type — the
+/// port of upstream's generic <c>queryEngine.query</c> as used by <c>api/relations/options.ts</c> to
+/// populate relation-kind custom-field pickers. Distinct from <see cref="ICrudIndexQuery"/> (which returns
+/// ids only). The default <see cref="NoopEntityLookupQuery"/> returns nothing; the query_index module
+/// registers a real implementation reading the <c>entity_indexes</c> doc store.
+/// </summary>
+public interface IEntityLookupQuery
+{
+    /// <summary>Return the projected doc rows (each carries at least <c>id</c> + the requested fields).</summary>
+    Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> LookupAsync(EntityLookupRequest req, CancellationToken ct = default);
+
+    /// <summary>Whether any in-scope record of the entity type carries the field (upstream column-probe).</summary>
+    Task<bool> FieldExistsAsync(string entityType, string field, Guid? tenantId, IReadOnlyList<Guid>? organizationIds, CancellationToken ct = default);
+}
+
+/// <summary>Default: no lookup backing (empty options). Overridden by query_index.</summary>
+public sealed class NoopEntityLookupQuery : IEntityLookupQuery
+{
+    private static readonly IReadOnlyList<IReadOnlyDictionary<string, object?>> Empty = Array.Empty<IReadOnlyDictionary<string, object?>>();
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> LookupAsync(EntityLookupRequest req, CancellationToken ct = default) => Task.FromResult(Empty);
+    public Task<bool> FieldExistsAsync(string entityType, string field, Guid? tenantId, IReadOnlyList<Guid>? organizationIds, CancellationToken ct = default) => Task.FromResult(false);
+}
+
 /// <summary>
 /// Bridge that turns an HTTP request into the auth state the CRUD factory needs — the port of upstream
 /// <c>withCtx</c> (the request-scoped Awilix container + resolved <c>OrganizationScope</c>). Core owns the

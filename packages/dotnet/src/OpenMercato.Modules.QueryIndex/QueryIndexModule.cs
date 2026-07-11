@@ -52,6 +52,7 @@ public sealed class QueryIndexModule : IModule
         // Real index seams — override Core's no-ops (last registration wins).
         services.AddScoped<ICrudIndexer, QueryIndexCrudIndexer>();
         services.AddScoped<ICrudIndexQuery, QueryIndexCrudListQuery>();
+        services.AddScoped<IEntityLookupQuery, QueryIndexEntityLookupQuery>();
         // Public query engine + base-row resolver.
         services.AddScoped<IQueryIndexEngine, QueryIndexEngine>();
         services.AddScoped<IIndexBaseRowResolver, CustomEntitiesStorageBaseRowResolver>();
