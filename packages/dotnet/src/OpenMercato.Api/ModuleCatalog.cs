@@ -37,5 +37,7 @@ public static class ModuleCatalog
         new DictionariesModule(),
         // customers: CRM domain — 25 tables (people/companies/deals/interactions/...); routes added per phase.
         new CustomersModule(),
+        // catalog: products/variants/categories/tags/prices/offers; OM-migrated catalog_* schema, routes per phase.
+        new OpenMercato.Modules.Catalog.CatalogModule(),
     });
 }
