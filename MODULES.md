@@ -76,7 +76,7 @@ These upstream packages are not ported as standalone modules; their behavior is 
 | Module | Purpose (short) | Tier | Python | .NET | Go |
 |---|---|---|---|---|---|
 | [customers](upstream/analysis/modules/customers.md) | CRM: people, companies, deals, activities | 3 | 🔍 | 🚧 | 🔍 |
-| catalog | Products, variants, and pricing used by sales | 3 | ⬜ | ⬜ | ⬜ |
+| catalog | Products, variants, and pricing used by sales | 3 | ⬜ | 🚧 | ⬜ |
 | sales | Quoting, ordering, fulfillment, billing | 3 | ⬜ | ⬜ | ⬜ |
 | [dashboards](upstream/analysis/modules/dashboards.md) | Configurable admin dashboard with module widgets | 3 | 🔍 | ✅ | 🔍 |
 | staff | Teams, roles, employee rosters | 3 | ⬜ | ⬜ | ⬜ |

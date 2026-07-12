@@ -108,3 +108,36 @@ Continuing the port past the customers CRM. All committed + pushed to `main`; un
 
 - **ActionLog change-diff population (done).** `CommandBus.PersistLog` auto-diffs before/after snapshots into `changes` (+ `changed_fields`/`primary_changed_field`) when the handler supplies no explicit diff, and derives `action_type` from the command id (`ActionLogProjection`, port of projections.ts). People + companies update commands capture `SnapshotAfter` **before** SaveChanges (the encryption interceptor rewrites encrypted columns in-place on save, so a post-save diff leaked ciphertext); bookkeeping fields (updatedAt/createdAt/id) are excluded. Verified live: a person rename now shows `changes:{displayName:{from,to}}` (plaintext) in the changelog list AND the export CSV. 308 .NET tests green.
 - Remaining deferred (unchanged): audit_logs author/tenant/org **name** hydration (needs the `IAuditLogDisplayDirectory` Core seam + Customers impl); profile-field changes (firstName/jobTitle live on the satellite profile, not the base-entity snapshot, so they don't diff yet); `access` route (no access_logs table); entities fieldsets lib / definitions cache / encryption POST + field-value encryption runtime; currencies rate providers; auth password-reset email + phone validation; query_index native SQL pushdown; **Python & Go** package catch-up.
+
+## Task J — catalog module port (.NET), started 2026-07-12
+
+The next Tier-3 domain module after customers. Upstream `packages/core/src/modules/catalog`: 768-line
+`data/entities.ts` (12 entities), 25 MikroORM migrations, ~3355 lines across 11 route groups
+(products 978, offers 481, prices 419, categories 326, variants 289, product-unit-conversions 195,
+option-schemas 186, price-kinds 165, tags 121, product-media 102, bulk-delete 93). Like customers, OM
+owns + migrates the `catalog_*` schema; the .NET port runs migrations-off and only wires the runtime
+EF model + routes.
+
+- **Foundation (done, committed).** `Data/Entities.cs` — 12 CLR entities (CatalogOptionSchemaTemplate,
+  CatalogProduct, CatalogProductUnitConversion, CatalogProductCategory + CategoryAssignment,
+  CatalogProductTag + TagAssignment, CatalogOffer, CatalogProductVariant, CatalogProductVariantRelation,
+  CatalogPriceKind, CatalogProductPrice). `CatalogModule.ConfigureModel` maps all 12 byte-exact onto the
+  shared AppDbContext (snake_case columns, `<table>_pkey`, jsonb→`string?`, numeric→`decimal`, MikroORM
+  relations→scalar FK Guids). Declaration surface: 7 ACL features (acl.ts, byte-exact titles), 18 events
+  (events.ts; 16 CRUD persistent + 2 pricing.resolve lifecycle transient), 1 notification type
+  (`catalog.product.low_stock`, warning, 72h), default role features (setup.ts). Module wired into API
+  `ModuleCatalog` + Worker `ModuleRegistry`. Build green, 308 .NET tests pass (model validates on host
+  DbContext construction).
+- **Parity notes / watch-items for the route phases:**
+  - `catalog_product_variants.status_entry_id` is **text** (not uuid, unlike `catalog_products.status_entry_id`) — modeled `string?`.
+  - `catalog_price_kinds.organization_id` is **nullable** (tenant-global price kinds).
+  - Numerics are `decimal` here; upstream serializes them as **strings** in JSON — the route projection layer must format to strings for 1:1 API parity (same choice/consequence as customers' decimals).
+  - Category `ancestor_ids`/`child_ids`/`descendant_ids` are jsonb arrays NOT NULL default `[]` (modeled `string` = "[]").
+  - ce.ts registers 3 code entities (`catalog_product`/`catalog_product_variant`/`catalog_product_price`, empty field sets, labelField name/sku/id) — NOT yet declared; add when the entities-registry/relations-options surface needs them.
+- **REMAINING (ranked, each a route-group slice + its command handlers + tests, mirroring the customers phases):**
+  1. **products** (largest, 978 lines) — list/create/update/delete + the DataQuery list surface (snake_case + cf), option-schema wiring, unit-price fields. The anchor slice.
+  2. **variants** (289) + **prices** (419) + **price-kinds** (165) — the pricing spine (variant SKUs, tiered/scoped prices, price kinds).
+  3. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
+  4. **offers** (481) — per-channel offers + their prices.
+  5. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
+  - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n. Port per phase, one lean commit each, build+tests green per slice; wire a query-index base-row resolver + `ICatalogRouteGroup` reflection dispatch when the first route lands (mirror `ICustomersRouteGroup`).
