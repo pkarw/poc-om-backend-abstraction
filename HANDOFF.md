@@ -134,10 +134,18 @@ EF model + routes.
   - Numerics are `decimal` here; upstream serializes them as **strings** in JSON — the route projection layer must format to strings for 1:1 API parity (same choice/consequence as customers' decimals).
   - Category `ancestor_ids`/`child_ids`/`descendant_ids` are jsonb arrays NOT NULL default `[]` (modeled `string` = "[]").
   - ce.ts registers 3 code entities (`catalog_product`/`catalog_product_variant`/`catalog_product_price`, empty field sets, labelField name/sku/id) — NOT yet declared; add when the entities-registry/relations-options surface needs them.
-- **REMAINING (ranked, each a route-group slice + its command handlers + tests, mirroring the customers phases):**
-  1. **products** (largest, 978 lines) — list/create/update/delete + the DataQuery list surface (snake_case + cf), option-schema wiring, unit-price fields. The anchor slice.
-  2. **variants** (289) + **prices** (419) + **price-kinds** (165) — the pricing spine (variant SKUs, tiered/scoped prices, price kinds).
-  3. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
-  4. **offers** (481) — per-channel offers + their prices.
-  5. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
-  - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n. Port per phase, one lean commit each, build+tests green per slice; wire a query-index base-row resolver + `ICatalogRouteGroup` reflection dispatch when the first route lands (mirror `ICustomersRouteGroup`).
+- **products slice (done, committed).** `GET/POST/PUT/DELETE /api/catalog/products`:
+  - Infra wired once (mirrors customers): `ICatalogRouteGroup` + reflection dispatch in `MapRoutes`; `ICommand` reflection-registration in `ConfigureServices`; `CatalogHttp` JSON body readers; `CatalogValidators.Product`.
+  - **`CatalogIndexBaseRowResolver`** (`catalog:catalog_product` base doc + enumerate) registered as a **decorator capturing the previously-registered `IIndexBaseRowResolver`** as fallback — the resolver is consumed as a single service, so chaining this way keeps customers' + storage resolvers intact regardless of module order and with no cross-module dependency. `CatalogIndexEntity.Product` is the shared entity-id constant.
+  - List = CRUD factory `UseIndexList` (snake_case DataQuery output matching OM `mapApiItem`); `ProjectListItem` emits the base `fields` + upstream `unit_price` composite; `ApplyFilters` covers the fallback path (productType/status/isActive/configurable/search); `OverlayAssociationsAsync` (afterList) overlays offers/channelIds, categories/categoryIds (+parentName), tags.
+  - Write = `catalog.products.{create,update,delete}` command handlers (base columns + categoryIds/tags sync via `CatalogWriteHelpers`; tags find-or-created in the free pool by slug). Update captures before/after snapshots → changelog diff; all three undoable. Factory auto-indexes on write via `EntityType`.
+  - 5 HTTP tests (`CatalogProductsTests`): create→list→search→update→soft-delete round trip, categoryIds/tags overlay, title-required 400, delete-id-required 400, list-requires-auth 401. **313 .NET tests green.**
+  - **DEFERRED (PARITY-TODO, documented in ProductsRoutes remarks):** pricing resolution (`item.pricing` via CatalogPricingService — not ported), unit-conversion-normalized quantity, sales-channel name lookup on offers (sales not ported), `cf_*` custom-field persistence, nested `offers[]` create + `unitPrice` config object + option-schema materialization, and the advanced association filters (channelIds/categoryIds/tagIds intersection, configurable→is_configurable) beyond the index's generic camelCase→snake_case doc matching.
+  - **VERIFY NEXT:** the combined-registry resolver chain (catalog→customers→storage) is exercised only in isolation by unit tests; spot-check in the testbench that customers people/companies lists AND catalog products list both work with both modules registered.
+- **REMAINING (ranked, each a route-group slice + its command handlers + tests):**
+  1. **variants** (289) + **prices** (419) + **price-kinds** (165) — the pricing spine (variant SKUs, tiered/scoped prices, price kinds); unblocks the products pricing decoration.
+  2. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
+  3. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
+  4. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
+  5. Products follow-ups: pricing decoration, cf persistence, nested offers/unitPrice/option-schema on create.
+  - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n.

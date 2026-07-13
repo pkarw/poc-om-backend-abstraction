@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenMercato.Core.Data;
 using OpenMercato.Core.Modules;
+using OpenMercato.Modules.Catalog.Api;
 using OpenMercato.Modules.Catalog.Data;
+using OpenMercato.Modules.Catalog.Lib;
+using OpenMercato.Modules.QueryIndex.Lib;
 
 namespace OpenMercato.Modules.Catalog;
 
@@ -106,18 +110,52 @@ public sealed class CatalogModule : IModule
     };
 
     // -------------------------------------------------------------------------------------------
-    // Services — phase agents register command handlers / workers / subscribers here (mirrors the
-    // customers module's reflection-discovery of ICommand + ICatalogRouteGroup once routes land).
+    // Services — reflection-discovers command handlers (like customers) and chains the catalog index
+    // base-row resolver in front of the existing one, so new command/route files need no edits here.
     // -------------------------------------------------------------------------------------------
     public void ConfigureServices(IServiceCollection services)
     {
+        // Command handlers — every non-abstract ICommand in the Catalog assembly binds as a scoped
+        // ICommand, so later route-group slices add command classes as NEW files without touching this.
+        var commandType = typeof(OpenMercato.Core.Commands.ICommand);
+        var commandImpls = typeof(CatalogModule).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && commandType.IsAssignableFrom(t))
+            .OrderBy(t => t.FullName, StringComparer.Ordinal);
+        foreach (var impl in commandImpls)
+            services.AddScoped(commandType, impl);
+
+        // Index base-row resolver: teaches the query index to read catalog_products base rows. Register
+        // as a DECORATOR capturing the previously-registered resolver (customers' or the storage default)
+        // as the fallback, so the resolver chain survives regardless of module registration order and
+        // without a cross-module compile dependency (IIndexBaseRowResolver is consumed as a single service).
+        var prior = services.LastOrDefault(d => d.ServiceType == typeof(IIndexBaseRowResolver));
+        Func<IServiceProvider, IIndexBaseRowResolver> priorFactory = prior switch
+        {
+            { ImplementationFactory: { } f } => sp => (IIndexBaseRowResolver)f(sp),
+            { ImplementationInstance: IIndexBaseRowResolver inst } => _ => inst,
+            { ImplementationType: { } t } => sp => (IIndexBaseRowResolver)ActivatorUtilities.CreateInstance(sp, t),
+            _ => sp => new CustomEntitiesStorageBaseRowResolver(sp.GetRequiredService<AppDbContext>()),
+        };
+        services.AddScoped<IIndexBaseRowResolver>(sp =>
+            new CatalogIndexBaseRowResolver(sp.GetRequiredService<AppDbContext>(), priorFactory(sp)));
     }
 
     // -------------------------------------------------------------------------------------------
-    // Routes — added incrementally per route group in later phases.
+    // Routes — reflection over ICatalogRouteGroup (parallel to customers' ICustomersRouteGroup). New
+    // route files require no edits here.
     // -------------------------------------------------------------------------------------------
     public void MapRoutes(IEndpointRouteBuilder routes)
     {
+        var groupType = typeof(ICatalogRouteGroup);
+        var implementations = typeof(CatalogModule).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && groupType.IsAssignableFrom(t))
+            .OrderBy(t => t.FullName, StringComparer.Ordinal);
+
+        foreach (var type in implementations)
+        {
+            if (Activator.CreateInstance(type) is ICatalogRouteGroup group)
+                group.Map(routes);
+        }
     }
 
     // -------------------------------------------------------------------------------------------
