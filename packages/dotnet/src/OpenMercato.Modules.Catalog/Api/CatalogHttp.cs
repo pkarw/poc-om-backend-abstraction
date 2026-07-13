@@ -103,6 +103,15 @@ public static class CatalogHttp
         return list;
     }
 
+    /// <summary>Parse a stored jsonb string back into a value that serializes as an object/array (so list
+    /// items echo <c>metadata</c> as JSON, not a quoted string). Null/blank → null.</summary>
+    public static object? JsonValue(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        try { return JsonDocument.Parse(raw).RootElement.Clone(); }
+        catch { return null; }
+    }
+
     public static string? Iso(DateTimeOffset? value) => value?.ToUniversalTime().ToString("o");
     public static string Iso(DateTimeOffset value) => value.ToUniversalTime().ToString("o");
 }

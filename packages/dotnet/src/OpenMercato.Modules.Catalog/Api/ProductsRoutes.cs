@@ -262,4 +262,5 @@ public static class CatalogIndexEntity
     public const string Price = "catalog:catalog_product_price";
     public const string PriceKind = "catalog:catalog_price_kind";
     public const string Category = "catalog:catalog_product_category";
+    public const string Offer = "catalog:catalog_offer";
 }

@@ -22,6 +22,15 @@ public sealed record CategoryResult(string? CategoryId);
 public sealed record CategorySnapshot(
     string Name, string? Slug, string? Description, string? ParentId, bool IsActive);
 
+// ---- Offers ----------------------------------------------------------------------------------
+public sealed record OfferCreateInput(Guid OrganizationId, Guid TenantId, JsonElement Body);
+public sealed record OfferUpdateInput(Guid Id, JsonElement Body);
+public sealed record OfferDeleteInput(Guid Id);
+public sealed record OfferResult(string? OfferId);
+
+public sealed record OfferSnapshot(
+    string Title, string? Description, string? DefaultMediaId, string? DefaultMediaUrl, bool IsActive);
+
 // ---- Variants --------------------------------------------------------------------------------
 public sealed record VariantCreateInput(JsonElement Body);
 public sealed record VariantUpdateInput(Guid Id, JsonElement Body);

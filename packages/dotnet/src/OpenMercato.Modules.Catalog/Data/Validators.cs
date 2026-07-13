@@ -45,6 +45,20 @@ public static class CatalogValidators
         return issues;
     }
 
+    /// <summary>offerCreateSchema: <c>productId</c>, <c>channelId</c> (uuid) and <c>title</c> are required.</summary>
+    public static IReadOnlyList<CrudValidationIssue> Offer(JsonElement body)
+    {
+        var issues = new List<CrudValidationIssue>();
+        if (CatalogHttp.GuidOf(body, "productId") is null)
+            issues.Add(new CrudValidationIssue(new[] { "productId" }, "productId is required", "invalid_uuid"));
+        if (CatalogHttp.GuidOf(body, "channelId") is null)
+            issues.Add(new CrudValidationIssue(new[] { "channelId" }, "channelId is required", "invalid_uuid"));
+        var title = CatalogHttp.Str(body, "title")?.Trim();
+        if (string.IsNullOrEmpty(title) || title.Length > 255)
+            issues.Add(new CrudValidationIssue(new[] { "title" }, "title is required", "invalid_string"));
+        return issues;
+    }
+
     /// <summary>priceKindCreateSchema: <c>code</c> (slug) and <c>title</c> are required.</summary>
     public static IReadOnlyList<CrudValidationIssue> PriceKind(JsonElement body)
     {

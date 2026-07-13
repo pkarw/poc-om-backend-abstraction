@@ -147,6 +147,30 @@ internal static class CatalogWriteHelpers
         }
     }
 
+    // ---- Offers ----------------------------------------------------------------------------------
+
+    public static void ApplyOfferBase(CatalogOffer o, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "channelId"))
+        {
+            var ch = CatalogHttp.GuidOf(body, "channelId");
+            if (ch is { } chv) o.ChannelId = chv;
+        }
+        if (CatalogHttp.Has(body, "title"))
+        {
+            var t = CatalogHttp.Str(body, "title")?.Trim();
+            if (!string.IsNullOrEmpty(t)) o.Title = t;
+        }
+        if (CatalogHttp.Has(body, "description")) o.Description = CatalogHttp.Str(body, "description");
+        if (CatalogHttp.Has(body, "defaultMediaId")) o.DefaultMediaId = CatalogHttp.GuidOf(body, "defaultMediaId");
+        if (CatalogHttp.Has(body, "defaultMediaUrl")) o.DefaultMediaUrl = CatalogHttp.Str(body, "defaultMediaUrl");
+        if (CatalogHttp.Has(body, "metadata")) o.Metadata = CatalogHttp.RawJson(body, "metadata");
+        if (CatalogHttp.Has(body, "isActive")) o.IsActive = CatalogHttp.Bool(body, "isActive") ?? o.IsActive;
+    }
+
+    public static OfferSnapshot Snapshot(CatalogOffer o) => new(
+        o.Title, o.Description, o.DefaultMediaId?.ToString(), o.DefaultMediaUrl, o.IsActive);
+
     // ---- Variants --------------------------------------------------------------------------------
 
     public static void ApplyVariantBase(CatalogProductVariant v, JsonElement body, bool isCreate)

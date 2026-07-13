@@ -54,6 +54,11 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
                 var k = await _db.Set<CatalogPriceKind>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
                 return k is null ? null : ProjectPriceKindDoc(k);
             }
+            case CatalogIndexEntity.Offer:
+            {
+                var o = await _db.Set<CatalogOffer>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
+                return o is null ? null : ProjectOfferDoc(o);
+            }
             default:
                 return await _fallback.LoadAsync(entityType, recordId, organizationId, tenantId, ct);
         }
@@ -92,6 +97,13 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
                     .Select(k => new { k.Id, k.OrganizationId, k.TenantId }).ToListAsync(ct);
                 return rows.Select(r => (r.Id.ToString(), r.OrganizationId, (Guid?)r.TenantId)).ToList();
             }
+            case CatalogIndexEntity.Offer:
+            {
+                var rows = await _db.Set<CatalogOffer>().AsNoTracking()
+                    .Where(o => o.DeletedAt == null).Where(o => tenantId == null || o.TenantId == tenantId)
+                    .Select(o => new { o.Id, Org = (Guid?)o.OrganizationId, o.TenantId }).ToListAsync(ct);
+                return rows.Select(r => (r.Id.ToString(), r.Org, (Guid?)r.TenantId)).ToList();
+            }
             default:
                 return await _fallback.EnumerateRecordIdsAsync(entityType, tenantId, ct);
         }
@@ -99,7 +111,7 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
 
     private static bool IsCatalog(string entityType) => entityType
         is CatalogIndexEntity.Product or CatalogIndexEntity.Variant
-        or CatalogIndexEntity.Price or CatalogIndexEntity.PriceKind;
+        or CatalogIndexEntity.Price or CatalogIndexEntity.PriceKind or CatalogIndexEntity.Offer;
 
     private static string? Iso(DateTimeOffset? v) => v?.ToUniversalTime().ToString("o");
 
@@ -194,6 +206,25 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
             ["tenant_id"] = pr.TenantId.ToString(),
             ["created_at"] = Iso(pr.CreatedAt),
             ["updated_at"] = Iso(pr.UpdatedAt),
+        };
+
+    /// <summary>Project a <c>catalog_product_offers</c> row into the index base doc (snake_case, for
+    /// filter/sort). NB: the offer LIST item is camelCase — see <c>OffersRoutes.ProjectListItem</c>.</summary>
+    internal static IReadOnlyDictionary<string, object?> ProjectOfferDoc(CatalogOffer o) =>
+        new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = o.Id.ToString(),
+            ["product_id"] = o.ProductId.ToString(),
+            ["organization_id"] = o.OrganizationId.ToString(),
+            ["tenant_id"] = o.TenantId.ToString(),
+            ["channel_id"] = o.ChannelId.ToString(),
+            ["title"] = o.Title,
+            ["description"] = o.Description,
+            ["default_media_id"] = o.DefaultMediaId?.ToString(),
+            ["default_media_url"] = o.DefaultMediaUrl,
+            ["is_active"] = o.IsActive,
+            ["created_at"] = Iso(o.CreatedAt),
+            ["updated_at"] = Iso(o.UpdatedAt),
         };
 
     /// <summary>Project a <c>catalog_price_kinds</c> row into the index base doc (price-kind list fields).</summary>

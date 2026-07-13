@@ -156,8 +156,13 @@ EF model + routes.
   - POST/PUT/DELETE reuse the CRUD factory via a new **`CrudConfig.MapList` flag** (added to Core, default true, additive/safe — gates the factory's list-GET mapping so a module can own the list path while reusing the mutation pipeline). Dispatch to `catalog.categories.{create,update,delete}`, each of which validates slug-uniqueness + parent-scope (400s) and calls `CategoryHierarchy.RebuildAsync` after the write. A category can't be its own parent (self-parent request clears the parent). Updates snapshot before/after; all undoable.
   - `CatalogHttp` gained `AuthorizeAsync`/`Json` (for the hand-written GET). 7 HTTP tests (`CatalogCategoriesTests`). **326 .NET tests green.**
   - **DEFERRED:** cf values on the manage rows (needs the cf codec); categories are not query-indexed (the factory's auto-index no-ops for them via the resolver fallback — the custom GET reads the base table directly).
+- **offers slice (done, committed).** `/api/catalog/offers` — per-channel offers:
+  - Index-backed CRUD, but the list item is **camelCase** (`productId`/`channelId`/`isActive`/`createdAt`…) — the OM offers UI shape, distinct from the snake_case DataQuery shape of the other catalog lists. So the base-row resolver stores a snake_case `ProjectOfferDoc` (for filter/sort) while `OffersRoutes.ProjectListItem` emits camelCase. Filters productId/channelId/channelIds/isActive/search.
+  - **Feature gate is `sales.channels.manage`** (a sales feature — offers sit at the catalog/sales boundary), replicated faithfully; in the testbench offers are 403 unless that feature is granted.
+  - `afterList` attaches the offer's `product` summary (title/sku/media) and its `prices` (with price-kind code/title/displayMode). Create requires productId+channelId+title; the product must exist in scope (404 otherwise). Updates snapshot before/after; all undoable.
+  - `CatalogHttp.JsonValue` echoes stored jsonb (metadata) as JSON. 4 HTTP tests (`CatalogOffersTests`). **330 .NET tests green.**
+  - **DEFERRED:** the product-level fallback pricing decoration (`productChannelPrice`/`productDefaultPrices` — the channel-priority resolution over offer-less product/variant prices) — emitted null/[]; same class as the products pricing decoration.
 - **REMAINING (ranked, each a route-group slice + its command handlers + tests):**
-  1. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
-  2. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
-  3. Products follow-ups: pricing decoration (now that prices/price-kinds exist), cf persistence, nested offers/unitPrice/option-schema on create.
+  1. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93) — the remaining smaller route groups.
+  2. Products follow-ups: pricing decoration (now that prices/price-kinds/offers exist), cf persistence, nested offers/unitPrice/option-schema on create.
   - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n.
