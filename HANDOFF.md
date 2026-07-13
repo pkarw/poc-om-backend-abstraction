@@ -142,10 +142,17 @@ EF model + routes.
   - 5 HTTP tests (`CatalogProductsTests`): create→list→search→update→soft-delete round trip, categoryIds/tags overlay, title-required 400, delete-id-required 400, list-requires-auth 401. **313 .NET tests green.**
   - **DEFERRED (PARITY-TODO, documented in ProductsRoutes remarks):** pricing resolution (`item.pricing` via CatalogPricingService — not ported), unit-conversion-normalized quantity, sales-channel name lookup on offers (sales not ported), `cf_*` custom-field persistence, nested `offers[]` create + `unitPrice` config object + option-schema materialization, and the advanced association filters (channelIds/categoryIds/tagIds intersection, configurable→is_configurable) beyond the index's generic camelCase→snake_case doc matching.
   - **VERIFY NEXT:** the combined-registry resolver chain (catalog→customers→storage) is exercised only in isolation by unit tests; spot-check in the testbench that customers people/companies lists AND catalog products list both work with both modules registered.
+- **pricing spine slice (done, committed).** `variants`, `price-kinds`, `prices` — all index-backed CRUD:
+  - `CatalogIndexBaseRowResolver` extended to resolve all four catalog entity types (product/variant/price/price_kind), each with a snake_case base doc + enumerate; `ProjectItem` reuses the resolver's `Project*Doc` so list-item == index-doc. `CatalogIndexEntity` holds the four entity-id constants; shared `CatalogFilter` (bool-flag + delete-id) helpers.
+  - **variants** (`/api/catalog/variants`): GET `catalog.products.view`, mutations `catalog.variants.manage`; a variant inherits its org/tenant scope from the parent product (resolved in the create command → 404 if the product is missing). Filters productId/sku/isActive/isDefault + search(name/sku/barcode). Soft-delete.
+  - **price-kinds** (`/api/catalog/price-kinds`): all methods `catalog.settings.manage`; **tenant-scoped** (`OrgScoped=false`, organization_id nullable). Filters isPromotion/isActive + search(code/title). Soft-delete.
+  - **prices** (`/api/catalog/prices`): GET `catalog.products.view`, mutations `catalog.pricing.manage`; **no soft-delete** — delete hard-removes the row, and undo re-inserts from the captured `PriceSnapshot` (currency upper-cased on write). Full scope filter set (product/variant/offer/channel/currency/priceKind/kind/user*/customer*).
+  - All updates capture before/after snapshots → changelog diff; all commands undoable (`FromSnapshot` re-creates a price row for undo of create/delete). 6 HTTP tests (`CatalogPricingTests`). **319 .NET tests green.**
+  - **Test-harness gotcha (fixed, worth remembering):** put the in-memory db name in a local computed ONCE, never `UseInMemoryDatabase("x-" + Guid.NewGuid())` inline in the options lambda — the lambda runs per DbContext instance, so an inline Guid gives every request scope its own isolated store (writes and reads never meet; lists silently return 0).
+  - **DEFERRED:** the prices `afterList` quantity-normalization filter (unit-conversion-aware min/max narrowing); `taxRateId`→taxRate resolution on price write; cf persistence.
 - **REMAINING (ranked, each a route-group slice + its command handlers + tests):**
-  1. **variants** (289) + **prices** (419) + **price-kinds** (165) — the pricing spine (variant SKUs, tiered/scoped prices, price kinds); unblocks the products pricing decoration.
-  2. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
-  3. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
-  4. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
-  5. Products follow-ups: pricing decoration, cf persistence, nested offers/unitPrice/option-schema on create.
+  1. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
+  2. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
+  3. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
+  4. Products follow-ups: pricing decoration (now that prices/price-kinds exist), cf persistence, nested offers/unitPrice/option-schema on create.
   - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n.

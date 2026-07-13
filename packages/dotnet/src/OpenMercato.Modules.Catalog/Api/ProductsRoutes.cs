@@ -73,20 +73,13 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
         UpdateResponse = o => o.Result ?? new { ok = true },
         DeleteDispatch = async m =>
         {
-            var id = ResolveDeleteId(m);
+            var id = CatalogFilter.ResolveDeleteId(m);
             if (id is null) throw CommandHttpException.BadRequest("Product id is required");
             var r = await m.Bus.ExecuteWithLog<ProductDeleteInput, ProductResult>(
                 "catalog.products.delete", new ProductDeleteInput(id.Value), m.Ctx);
             return new CrudMutationOutcome(r.Result.ProductId, r.LogEntry);
         },
     };
-
-    internal static Guid? ResolveDeleteId(CrudMutationContext m)
-    {
-        if (CatalogHttp.GuidOf(m.Body, "id") is { } fromBody) return fromBody;
-        if (m.Query.TryGetValue("id", out var raw) && Guid.TryParse(raw, out var g)) return g;
-        return null;
-    }
 
     private static Dictionary<string, Func<IQueryable<CatalogProduct>, bool, IOrderedQueryable<CatalogProduct>>> Sorts() => new()
     {
@@ -104,9 +97,9 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
             q = q.Where(p => p.ProductType == pt);
         if (query.Filters.TryGetValue("status", out var st) && Guid.TryParse(st, out var statusId))
             q = q.Where(p => p.StatusEntryId == statusId);
-        if (query.Filters.TryGetValue("isActive", out var ia) && TryBool(ia, out var active))
+        if (query.Filters.TryGetValue("isActive", out var ia) && CatalogFilter.TryBool(ia, out var active))
             q = q.Where(p => p.IsActive == active);
-        if (query.Filters.TryGetValue("configurable", out var cf) && TryBool(cf, out var configurable))
+        if (query.Filters.TryGetValue("configurable", out var cf) && CatalogFilter.TryBool(cf, out var configurable))
             q = q.Where(p => p.IsConfigurable == configurable);
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -119,16 +112,6 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
                 (p.Handle != null && p.Handle.ToLower().Contains(term)));
         }
         return q;
-    }
-
-    private static bool TryBool(string raw, out bool value)
-    {
-        switch (raw?.Trim().ToLowerInvariant())
-        {
-            case "1": case "true": case "yes": value = true; return true;
-            case "0": case "false": case "no": value = false; return true;
-            default: value = false; return false;
-        }
     }
 
     /// <summary>List-row projection in OM's snake_case DataQuery shape (the product list <c>fields</c> +
@@ -275,4 +258,7 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
 public static class CatalogIndexEntity
 {
     public const string Product = "catalog:catalog_product";
+    public const string Variant = "catalog:catalog_product_variant";
+    public const string Price = "catalog:catalog_product_price";
+    public const string PriceKind = "catalog:catalog_price_kind";
 }

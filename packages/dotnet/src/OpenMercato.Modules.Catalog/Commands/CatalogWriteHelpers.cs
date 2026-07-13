@@ -147,6 +147,143 @@ internal static class CatalogWriteHelpers
         }
     }
 
+    // ---- Variants --------------------------------------------------------------------------------
+
+    public static void ApplyVariantBase(CatalogProductVariant v, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "name")) v.Name = CatalogHttp.Str(body, "name");
+        if (CatalogHttp.Has(body, "sku")) v.Sku = CatalogHttp.Str(body, "sku");
+        if (CatalogHttp.Has(body, "barcode")) v.Barcode = CatalogHttp.Str(body, "barcode");
+        // status_entry_id is a text column on variants (not uuid); store the raw string.
+        if (CatalogHttp.Has(body, "statusEntryId")) v.StatusEntryId = CatalogHttp.Str(body, "statusEntryId");
+        if (CatalogHttp.Has(body, "isDefault")) v.IsDefault = CatalogHttp.Bool(body, "isDefault") ?? v.IsDefault;
+        if (CatalogHttp.Has(body, "isActive")) v.IsActive = CatalogHttp.Bool(body, "isActive") ?? v.IsActive;
+        if (CatalogHttp.Has(body, "weightValue")) v.WeightValue = CatalogHttp.Decimal(body, "weightValue");
+        if (CatalogHttp.Has(body, "weightUnit")) v.WeightUnit = CatalogHttp.Str(body, "weightUnit");
+        if (CatalogHttp.Has(body, "taxRateId")) v.TaxRateId = CatalogHttp.GuidOf(body, "taxRateId");
+        if (CatalogHttp.Has(body, "taxRate")) v.TaxRate = CatalogHttp.Decimal(body, "taxRate");
+        if (CatalogHttp.Has(body, "dimensions")) v.Dimensions = CatalogHttp.RawJson(body, "dimensions");
+        if (CatalogHttp.Has(body, "metadata")) v.Metadata = CatalogHttp.RawJson(body, "metadata");
+        if (CatalogHttp.Has(body, "optionValues")) v.OptionValues = CatalogHttp.RawJson(body, "optionValues");
+        if (CatalogHttp.Has(body, "defaultMediaId")) v.DefaultMediaId = CatalogHttp.GuidOf(body, "defaultMediaId");
+        if (CatalogHttp.Has(body, "defaultMediaUrl")) v.DefaultMediaUrl = CatalogHttp.Str(body, "defaultMediaUrl");
+        if (CatalogHttp.Has(body, "customFieldsetCode")) v.CustomFieldsetCode = CatalogHttp.Str(body, "customFieldsetCode");
+    }
+
+    public static VariantSnapshot Snapshot(CatalogProductVariant v) => new(
+        v.Name, v.Sku, v.Barcode, v.StatusEntryId, v.IsDefault, v.IsActive, v.WeightUnit, v.CustomFieldsetCode);
+
+    // ---- Price kinds -----------------------------------------------------------------------------
+
+    public static void ApplyPriceKindBase(CatalogPriceKind k, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "code"))
+        {
+            var code = CatalogHttp.Str(body, "code")?.Trim();
+            if (!string.IsNullOrEmpty(code)) k.Code = code;
+        }
+        if (CatalogHttp.Has(body, "title"))
+        {
+            var title = CatalogHttp.Str(body, "title")?.Trim();
+            if (!string.IsNullOrEmpty(title)) k.Title = title;
+        }
+        if (CatalogHttp.Has(body, "displayMode"))
+        {
+            var dm = CatalogHttp.Str(body, "displayMode")?.Trim();
+            if (dm is "including-tax" or "excluding-tax") k.DisplayMode = dm;
+        }
+        if (CatalogHttp.Has(body, "currencyCode")) k.CurrencyCode = CatalogHttp.Str(body, "currencyCode")?.Trim()?.ToUpperInvariant();
+        if (CatalogHttp.Has(body, "isPromotion")) k.IsPromotion = CatalogHttp.Bool(body, "isPromotion") ?? k.IsPromotion;
+        if (CatalogHttp.Has(body, "isActive")) k.IsActive = CatalogHttp.Bool(body, "isActive") ?? k.IsActive;
+    }
+
+    public static PriceKindSnapshot Snapshot(CatalogPriceKind k) => new(
+        k.Code, k.Title, k.DisplayMode, k.CurrencyCode, k.IsPromotion, k.IsActive);
+
+    // ---- Prices ----------------------------------------------------------------------------------
+
+    public static void ApplyPriceBase(CatalogProductPrice pr, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "productId")) pr.ProductId = CatalogHttp.GuidOf(body, "productId");
+        if (CatalogHttp.Has(body, "variantId")) pr.VariantId = CatalogHttp.GuidOf(body, "variantId");
+        if (CatalogHttp.Has(body, "offerId")) pr.OfferId = CatalogHttp.GuidOf(body, "offerId");
+        if (CatalogHttp.Has(body, "priceKindId"))
+        {
+            var pk = CatalogHttp.GuidOf(body, "priceKindId");
+            if (pk is { } pkv) pr.PriceKindId = pkv;
+        }
+        if (CatalogHttp.Has(body, "currencyCode"))
+        {
+            var cur = CatalogHttp.Str(body, "currencyCode")?.Trim()?.ToUpperInvariant();
+            if (!string.IsNullOrEmpty(cur)) pr.CurrencyCode = cur;
+        }
+        if (CatalogHttp.Has(body, "kind"))
+        {
+            var kind = CatalogHttp.Str(body, "kind")?.Trim();
+            if (!string.IsNullOrEmpty(kind)) pr.Kind = kind;
+        }
+        if (CatalogHttp.Has(body, "minQuantity"))
+        {
+            var mq = CatalogHttp.Int(body, "minQuantity");
+            if (mq is { } mqv && mqv >= 1) pr.MinQuantity = mqv;
+        }
+        if (CatalogHttp.Has(body, "maxQuantity")) pr.MaxQuantity = CatalogHttp.Int(body, "maxQuantity");
+        if (CatalogHttp.Has(body, "unitPriceNet")) pr.UnitPriceNet = CatalogHttp.Decimal(body, "unitPriceNet");
+        if (CatalogHttp.Has(body, "unitPriceGross")) pr.UnitPriceGross = CatalogHttp.Decimal(body, "unitPriceGross");
+        if (CatalogHttp.Has(body, "taxRate")) pr.TaxRate = CatalogHttp.Decimal(body, "taxRate");
+        if (CatalogHttp.Has(body, "taxAmount")) pr.TaxAmount = CatalogHttp.Decimal(body, "taxAmount");
+        if (CatalogHttp.Has(body, "channelId")) pr.ChannelId = CatalogHttp.GuidOf(body, "channelId");
+        if (CatalogHttp.Has(body, "userId")) pr.UserId = CatalogHttp.GuidOf(body, "userId");
+        if (CatalogHttp.Has(body, "userGroupId")) pr.UserGroupId = CatalogHttp.GuidOf(body, "userGroupId");
+        if (CatalogHttp.Has(body, "customerId")) pr.CustomerId = CatalogHttp.GuidOf(body, "customerId");
+        if (CatalogHttp.Has(body, "customerGroupId")) pr.CustomerGroupId = CatalogHttp.GuidOf(body, "customerGroupId");
+        if (CatalogHttp.Has(body, "metadata")) pr.Metadata = CatalogHttp.RawJson(body, "metadata");
+        if (CatalogHttp.Has(body, "startsAt")) pr.StartsAt = CatalogHttp.Date(body, "startsAt");
+        if (CatalogHttp.Has(body, "endsAt")) pr.EndsAt = CatalogHttp.Date(body, "endsAt");
+    }
+
+    public static PriceSnapshot Snapshot(CatalogProductPrice pr) => new(
+        pr.ProductId?.ToString(), pr.VariantId?.ToString(), pr.OfferId?.ToString(), pr.PriceKindId.ToString(),
+        pr.CurrencyCode, pr.Kind, pr.MinQuantity, pr.MaxQuantity, pr.UnitPriceNet, pr.UnitPriceGross,
+        pr.TaxRate, pr.TaxAmount, pr.ChannelId?.ToString(), pr.UserId?.ToString(), pr.UserGroupId?.ToString(),
+        pr.CustomerId?.ToString(), pr.CustomerGroupId?.ToString(),
+        CatalogHttp.Iso(pr.StartsAt), CatalogHttp.Iso(pr.EndsAt), pr.Metadata);
+
+    /// <summary>Re-create a price row from a snapshot (used to undo the hard delete). Id + scope come
+    /// from the action log; the rest from the snapshot.</summary>
+    public static CatalogProductPrice FromSnapshot(Guid id, Guid organizationId, Guid tenantId, PriceSnapshot s)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new CatalogProductPrice
+        {
+            Id = id,
+            OrganizationId = organizationId,
+            TenantId = tenantId,
+            ProductId = Guid.TryParse(s.ProductId, out var p) ? p : null,
+            VariantId = Guid.TryParse(s.VariantId, out var v) ? v : null,
+            OfferId = Guid.TryParse(s.OfferId, out var o) ? o : null,
+            PriceKindId = Guid.TryParse(s.PriceKindId, out var pk) ? pk : Guid.Empty,
+            CurrencyCode = s.CurrencyCode,
+            Kind = s.Kind,
+            MinQuantity = s.MinQuantity,
+            MaxQuantity = s.MaxQuantity,
+            UnitPriceNet = s.UnitPriceNet,
+            UnitPriceGross = s.UnitPriceGross,
+            TaxRate = s.TaxRate,
+            TaxAmount = s.TaxAmount,
+            ChannelId = Guid.TryParse(s.ChannelId, out var ch) ? ch : null,
+            UserId = Guid.TryParse(s.UserId, out var u) ? u : null,
+            UserGroupId = Guid.TryParse(s.UserGroupId, out var ug) ? ug : null,
+            CustomerId = Guid.TryParse(s.CustomerId, out var c) ? c : null,
+            CustomerGroupId = Guid.TryParse(s.CustomerGroupId, out var cg) ? cg : null,
+            Metadata = s.Metadata,
+            StartsAt = DateTimeOffset.TryParse(s.StartsAt, out var sa) ? sa : null,
+            EndsAt = DateTimeOffset.TryParse(s.EndsAt, out var ea) ? ea : null,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
     /// <summary>Lowercase slug: keep [a-z0-9], collapse every other run to a single '-', trim leading/trailing.</summary>
     public static string Slugify(string value)
     {
