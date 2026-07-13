@@ -72,6 +72,34 @@ public static class CatalogValidators
         return issues;
     }
 
+    /// <summary>productUnitConversionCreateSchema: <c>productId</c> (uuid), <c>unitCode</c> and a positive
+    /// <c>toBaseFactor</c> are required.</summary>
+    public static IReadOnlyList<CrudValidationIssue> UnitConversion(JsonElement body)
+    {
+        var issues = new List<CrudValidationIssue>();
+        if (CatalogHttp.GuidOf(body, "productId") is null)
+            issues.Add(new CrudValidationIssue(new[] { "productId" }, "productId is required", "invalid_uuid"));
+        var unitCode = CatalogHttp.Str(body, "unitCode")?.Trim();
+        if (string.IsNullOrEmpty(unitCode) || unitCode.Length > 50)
+            issues.Add(new CrudValidationIssue(new[] { "unitCode" }, "unitCode is required", "invalid_string"));
+        var factor = CatalogHttp.Decimal(body, "toBaseFactor");
+        if (factor is not { } f || f <= 0)
+            issues.Add(new CrudValidationIssue(new[] { "toBaseFactor" }, "toBaseFactor must be positive", "invalid_number"));
+        return issues;
+    }
+
+    /// <summary>optionSchemaTemplateCreateSchema: <c>name</c> and <c>schema</c> (jsonb) are required.</summary>
+    public static IReadOnlyList<CrudValidationIssue> OptionSchema(JsonElement body)
+    {
+        var issues = new List<CrudValidationIssue>();
+        var name = CatalogHttp.Str(body, "name")?.Trim();
+        if (string.IsNullOrEmpty(name) || name.Length > 255)
+            issues.Add(new CrudValidationIssue(new[] { "name" }, "name is required", "invalid_string"));
+        if (CatalogHttp.RawJson(body, "schema") is null)
+            issues.Add(new CrudValidationIssue(new[] { "schema" }, "schema is required", "invalid_type"));
+        return issues;
+    }
+
     /// <summary>priceCreateSchema: <c>currencyCode</c> and <c>priceKindId</c> (uuid) are required.</summary>
     public static IReadOnlyList<CrudValidationIssue> Price(JsonElement body)
     {

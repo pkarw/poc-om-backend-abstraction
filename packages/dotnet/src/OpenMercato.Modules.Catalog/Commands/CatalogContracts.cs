@@ -22,6 +22,22 @@ public sealed record CategoryResult(string? CategoryId);
 public sealed record CategorySnapshot(
     string Name, string? Slug, string? Description, string? ParentId, bool IsActive);
 
+// ---- Product unit conversions ----------------------------------------------------------------
+public sealed record UnitConversionCreateInput(Guid OrganizationId, Guid TenantId, JsonElement Body);
+public sealed record UnitConversionUpdateInput(Guid Id, JsonElement Body);
+public sealed record UnitConversionDeleteInput(Guid Id);
+public sealed record UnitConversionResult(string? ConversionId);
+
+public sealed record UnitConversionSnapshot(string UnitCode, decimal ToBaseFactor, int SortOrder, bool IsActive);
+
+// ---- Option schema templates -----------------------------------------------------------------
+public sealed record OptionSchemaCreateInput(Guid OrganizationId, Guid TenantId, JsonElement Body);
+public sealed record OptionSchemaUpdateInput(Guid Id, JsonElement Body);
+public sealed record OptionSchemaDeleteInput(Guid Id);
+public sealed record OptionSchemaResult(string? SchemaId);
+
+public sealed record OptionSchemaSnapshot(string Name, string? Code, string? Description, bool IsActive);
+
 // ---- Offers ----------------------------------------------------------------------------------
 public sealed record OfferCreateInput(Guid OrganizationId, Guid TenantId, JsonElement Body);
 public sealed record OfferUpdateInput(Guid Id, JsonElement Body);

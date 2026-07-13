@@ -59,6 +59,16 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
                 var o = await _db.Set<CatalogOffer>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
                 return o is null ? null : ProjectOfferDoc(o);
             }
+            case CatalogIndexEntity.UnitConversion:
+            {
+                var u = await _db.Set<CatalogProductUnitConversion>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
+                return u is null ? null : ProjectUnitConversionDoc(u);
+            }
+            case CatalogIndexEntity.OptionSchema:
+            {
+                var s = await _db.Set<CatalogOptionSchemaTemplate>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct);
+                return s is null ? null : ProjectOptionSchemaDoc(s);
+            }
             default:
                 return await _fallback.LoadAsync(entityType, recordId, organizationId, tenantId, ct);
         }
@@ -104,6 +114,20 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
                     .Select(o => new { o.Id, Org = (Guid?)o.OrganizationId, o.TenantId }).ToListAsync(ct);
                 return rows.Select(r => (r.Id.ToString(), r.Org, (Guid?)r.TenantId)).ToList();
             }
+            case CatalogIndexEntity.UnitConversion:
+            {
+                var rows = await _db.Set<CatalogProductUnitConversion>().AsNoTracking()
+                    .Where(u => u.DeletedAt == null).Where(u => tenantId == null || u.TenantId == tenantId)
+                    .Select(u => new { u.Id, Org = (Guid?)u.OrganizationId, u.TenantId }).ToListAsync(ct);
+                return rows.Select(r => (r.Id.ToString(), r.Org, (Guid?)r.TenantId)).ToList();
+            }
+            case CatalogIndexEntity.OptionSchema:
+            {
+                var rows = await _db.Set<CatalogOptionSchemaTemplate>().AsNoTracking()
+                    .Where(s => s.DeletedAt == null).Where(s => tenantId == null || s.TenantId == tenantId)
+                    .Select(s => new { s.Id, Org = (Guid?)s.OrganizationId, s.TenantId }).ToListAsync(ct);
+                return rows.Select(r => (r.Id.ToString(), r.Org, (Guid?)r.TenantId)).ToList();
+            }
             default:
                 return await _fallback.EnumerateRecordIdsAsync(entityType, tenantId, ct);
         }
@@ -111,7 +135,8 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
 
     private static bool IsCatalog(string entityType) => entityType
         is CatalogIndexEntity.Product or CatalogIndexEntity.Variant
-        or CatalogIndexEntity.Price or CatalogIndexEntity.PriceKind or CatalogIndexEntity.Offer;
+        or CatalogIndexEntity.Price or CatalogIndexEntity.PriceKind or CatalogIndexEntity.Offer
+        or CatalogIndexEntity.UnitConversion or CatalogIndexEntity.OptionSchema;
 
     private static string? Iso(DateTimeOffset? v) => v?.ToUniversalTime().ToString("o");
 
@@ -206,6 +231,39 @@ public sealed class CatalogIndexBaseRowResolver : IIndexBaseRowResolver
             ["tenant_id"] = pr.TenantId.ToString(),
             ["created_at"] = Iso(pr.CreatedAt),
             ["updated_at"] = Iso(pr.UpdatedAt),
+        };
+
+    /// <summary>Project a <c>catalog_product_unit_conversions</c> row into the index base doc (list fields;
+    /// the LIST item additionally carries a <c>unitCode</c> camelCase alias + parsed metadata).</summary>
+    internal static IReadOnlyDictionary<string, object?> ProjectUnitConversionDoc(CatalogProductUnitConversion u) =>
+        new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = u.Id.ToString(),
+            ["product_id"] = u.ProductId.ToString(),
+            ["organization_id"] = u.OrganizationId.ToString(),
+            ["tenant_id"] = u.TenantId.ToString(),
+            ["unit_code"] = u.UnitCode,
+            ["to_base_factor"] = u.ToBaseFactor,
+            ["sort_order"] = u.SortOrder,
+            ["is_active"] = u.IsActive,
+            ["created_at"] = Iso(u.CreatedAt),
+            ["updated_at"] = Iso(u.UpdatedAt),
+        };
+
+    /// <summary>Project a <c>catalog_product_option_schemas</c> row into the index base doc (filter/sort
+    /// fields; the LIST item additionally carries parsed schema + metadata).</summary>
+    internal static IReadOnlyDictionary<string, object?> ProjectOptionSchemaDoc(CatalogOptionSchemaTemplate s) =>
+        new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = s.Id.ToString(),
+            ["organization_id"] = s.OrganizationId.ToString(),
+            ["tenant_id"] = s.TenantId.ToString(),
+            ["name"] = s.Name,
+            ["code"] = s.Code,
+            ["description"] = s.Description,
+            ["is_active"] = s.IsActive,
+            ["created_at"] = Iso(s.CreatedAt),
+            ["updated_at"] = Iso(s.UpdatedAt),
         };
 
     /// <summary>Project a <c>catalog_product_offers</c> row into the index base doc (snake_case, for

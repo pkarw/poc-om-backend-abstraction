@@ -162,7 +162,14 @@ EF model + routes.
   - `afterList` attaches the offer's `product` summary (title/sku/media) and its `prices` (with price-kind code/title/displayMode). Create requires productId+channelId+title; the product must exist in scope (404 otherwise). Updates snapshot before/after; all undoable.
   - `CatalogHttp.JsonValue` echoes stored jsonb (metadata) as JSON. 4 HTTP tests (`CatalogOffersTests`). **330 .NET tests green.**
   - **DEFERRED:** the product-level fallback pricing decoration (`productChannelPrice`/`productDefaultPrices` — the channel-priority resolution over offer-less product/variant prices) — emitted null/[]; same class as the products pricing decoration.
-- **REMAINING (ranked, each a route-group slice + its command handlers + tests):**
-  1. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93) — the remaining smaller route groups.
-  2. Products follow-ups: pricing decoration (now that prices/price-kinds/offers exist), cf persistence, nested offers/unitPrice/option-schema on create.
-  - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n.
+- **remaining route groups slice (done, committed).** tags, product-unit-conversions, option-schemas, product-media:
+  - **product-unit-conversions** (`/api/catalog/product-unit-conversions`): index-backed CRUD; GET `catalog.products.view`, mutations `catalog.products.manage`; the list item carries both `unit_code` and a `unitCode` camelCase alias (upstream transformItem) + parsed metadata. Create requires productId (product must exist in scope → 404) + unitCode + a positive toBaseFactor. Soft-delete.
+  - **option-schemas** (`/api/catalog/option-schemas`): index-backed CRUD; GET `catalog.products.view`, mutations `catalog.settings.manage`; list item echoes `schema`/`metadata` as parsed JSON. Create requires name + schema; code defaults to the slugified name when omitted. Soft-delete.
+  - **tags** (`/api/catalog/tags`): read-only GET of the free tag pool (label ILIKE search, paged, `{items:[{id,label,slug,createdAt,updatedAt}],total}`). Tags are created implicitly by the products `tags` nested write — no tag mutation route.
+  - **product-media** (`/api/catalog/product-media?productId=`): validates productId (400) + product scope (404); returns `{items:[]}` — **the attachments module is not ported**, so the attachment lookup + thumbnail-URL building is deferred (validation contract preserved).
+  - `ProjectItem` reuses the resolver `Project*Doc` + per-route additions; 6 HTTP tests (`CatalogMiscRoutesTests`). **336 .NET tests green.**
+  - **DEFERRED / out of scope: bulk-delete** (`api/bulk-delete`) — enqueues an async job via the `progress` module + a bullmq queue, neither ported; porting a synchronous stub would break the async-job contract, so it is intentionally not ported. **product-media attachments** — needs the attachments module.
+- **REMAINING:**
+  1. **Products/offers pricing decoration** — now that prices/price-kinds/offers exist, wire the deferred `item.pricing` (products) and `productChannelPrice`/`productDefaultPrices` (offers) fallback resolution; needs the pricing-resolution service + unit-conversion normalization ported.
+  2. cf (`cf_*`) persistence across the catalog write path; nested offers/unitPrice/option-schema materialization on product create.
+  3. bulk-delete (needs progress + queue); product-media attachments (needs attachments module); `setup.ts` seeds (units, price kinds, examples); subscribers/workers; i18n.

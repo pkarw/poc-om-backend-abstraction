@@ -147,6 +147,57 @@ internal static class CatalogWriteHelpers
         }
     }
 
+    // ---- Product unit conversions ----------------------------------------------------------------
+
+    public static void ApplyUnitConversionBase(CatalogProductUnitConversion u, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "unitCode"))
+        {
+            var code = CatalogHttp.Str(body, "unitCode")?.Trim();
+            if (!string.IsNullOrEmpty(code)) u.UnitCode = code;
+        }
+        if (CatalogHttp.Has(body, "toBaseFactor"))
+        {
+            var f = CatalogHttp.Decimal(body, "toBaseFactor");
+            if (f is { } fv && fv > 0) u.ToBaseFactor = fv;
+        }
+        if (CatalogHttp.Has(body, "sortOrder"))
+            u.SortOrder = CatalogHttp.Int(body, "sortOrder") ?? u.SortOrder;
+        if (CatalogHttp.Has(body, "isActive"))
+            u.IsActive = CatalogHttp.Bool(body, "isActive") ?? u.IsActive;
+        if (CatalogHttp.Has(body, "metadata")) u.Metadata = CatalogHttp.RawJson(body, "metadata");
+    }
+
+    public static UnitConversionSnapshot Snapshot(CatalogProductUnitConversion u) =>
+        new(u.UnitCode, u.ToBaseFactor, u.SortOrder, u.IsActive);
+
+    // ---- Option schema templates -----------------------------------------------------------------
+
+    public static void ApplyOptionSchemaBase(CatalogOptionSchemaTemplate s, JsonElement body, bool isCreate)
+    {
+        if (CatalogHttp.Has(body, "name"))
+        {
+            var name = CatalogHttp.Str(body, "name")?.Trim();
+            if (!string.IsNullOrEmpty(name)) s.Name = name;
+        }
+        if (CatalogHttp.Has(body, "code"))
+        {
+            var code = CatalogHttp.Str(body, "code")?.Trim();
+            s.Code = string.IsNullOrEmpty(code) ? s.Code : code;
+        }
+        if (CatalogHttp.Has(body, "description")) s.Description = CatalogHttp.Str(body, "description");
+        if (CatalogHttp.Has(body, "schema"))
+        {
+            var schema = CatalogHttp.RawJson(body, "schema");
+            if (schema is not null) s.Schema = schema;
+        }
+        if (CatalogHttp.Has(body, "metadata")) s.Metadata = CatalogHttp.RawJson(body, "metadata");
+        if (CatalogHttp.Has(body, "isActive")) s.IsActive = CatalogHttp.Bool(body, "isActive") ?? s.IsActive;
+    }
+
+    public static OptionSchemaSnapshot Snapshot(CatalogOptionSchemaTemplate s) =>
+        new(s.Name, s.Code, s.Description, s.IsActive);
+
     // ---- Offers ----------------------------------------------------------------------------------
 
     public static void ApplyOfferBase(CatalogOffer o, JsonElement body, bool isCreate)
