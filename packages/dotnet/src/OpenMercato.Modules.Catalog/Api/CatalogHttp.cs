@@ -1,4 +1,8 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using OpenMercato.Core.Commands;
+using OpenMercato.Core.Crud;
 
 namespace OpenMercato.Modules.Catalog.Api;
 
@@ -10,6 +14,22 @@ namespace OpenMercato.Modules.Catalog.Api;
 /// </summary>
 public static class CatalogHttp
 {
+    public static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
+    public static IResult Json(object body, int status) => Results.Json(body, Web, statusCode: status);
+
+    /// <summary>Resolve the request context (401 when unauthenticated) and check the given features (403).
+    /// Used by the hand-written catalog GET endpoints; the CRUD factory does this itself for its routes.</summary>
+    public static async Task<(CommandContext? Ctx, IResult? Denied)> AuthorizeAsync(HttpContext http, string[]? features)
+    {
+        var rc = http.RequestServices.GetRequiredService<ICrudRequestContext>();
+        var ctx = await rc.ResolveAsync(http);
+        if (ctx is null) return (null, Json(new { error = "Unauthorized" }, 401));
+        if (features is { Length: > 0 } && !await rc.HasAllFeaturesAsync(ctx, features))
+            return (null, Json(new { error = "Forbidden", requiredFeatures = features }, 403));
+        return (ctx, null);
+    }
+
     public static bool Has(JsonElement body, string name) =>
         body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out _);
 

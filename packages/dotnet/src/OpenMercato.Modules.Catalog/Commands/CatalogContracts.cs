@@ -13,6 +13,15 @@ public sealed record ProductUpdateInput(Guid Id, JsonElement Body);
 public sealed record ProductDeleteInput(Guid Id);
 public sealed record ProductResult(string? ProductId);
 
+// ---- Categories ------------------------------------------------------------------------------
+public sealed record CategoryCreateInput(Guid OrganizationId, Guid TenantId, JsonElement Body);
+public sealed record CategoryUpdateInput(Guid Id, JsonElement Body);
+public sealed record CategoryDeleteInput(Guid Id);
+public sealed record CategoryResult(string? CategoryId);
+
+public sealed record CategorySnapshot(
+    string Name, string? Slug, string? Description, string? ParentId, bool IsActive);
+
 // ---- Variants --------------------------------------------------------------------------------
 public sealed record VariantCreateInput(JsonElement Body);
 public sealed record VariantUpdateInput(Guid Id, JsonElement Body);

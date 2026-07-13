@@ -26,6 +26,16 @@ public static class CatalogValidators
         return issues;
     }
 
+    /// <summary>categoryCreateSchema: <c>name</c> is required (min 1, max 255).</summary>
+    public static IReadOnlyList<CrudValidationIssue> Category(JsonElement body)
+    {
+        var issues = new List<CrudValidationIssue>();
+        var name = CatalogHttp.Str(body, "name")?.Trim();
+        if (string.IsNullOrEmpty(name) || name.Length > 255)
+            issues.Add(new CrudValidationIssue(new[] { "name" }, "name is required", "invalid_string"));
+        return issues;
+    }
+
     /// <summary>variantCreateSchema: <c>productId</c> is required (uuid).</summary>
     public static IReadOnlyList<CrudValidationIssue> Variant(JsonElement body)
     {

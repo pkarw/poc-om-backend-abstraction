@@ -46,7 +46,8 @@ public static class CrudRoute
         // Cast handlers to Func<...,Task<IResult>> so minimal APIs treat them as route handlers that
         // write the returned IResult (a bare HttpContext->Task lambda is inferred as a RequestDelegate,
         // which discards the result — ASP0016).
-        routes.MapGet(basePath, (Func<HttpContext, Task<IResult>>)(http => ListAsync(http, config)));
+        if (config.MapList)
+            routes.MapGet(basePath, (Func<HttpContext, Task<IResult>>)(http => ListAsync(http, config)));
         if (config.MapItemGet)
             routes.MapGet(basePath + "/{id}", (Func<HttpContext, string, Task<IResult>>)((http, id) => GetByPathAsync(http, id, config)));
         routes.MapPost(basePath, (Func<HttpContext, Task<IResult>>)(http => CreateAsync(http, config)));

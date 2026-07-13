@@ -150,9 +150,14 @@ EF model + routes.
   - All updates capture before/after snapshots → changelog diff; all commands undoable (`FromSnapshot` re-creates a price row for undo of create/delete). 6 HTTP tests (`CatalogPricingTests`). **319 .NET tests green.**
   - **Test-harness gotcha (fixed, worth remembering):** put the in-memory db name in a local computed ONCE, never `UseInMemoryDatabase("x-" + Guid.NewGuid())` inline in the options lambda — the lambda runs per DbContext instance, so an inline Guid gives every request scope its own isolated store (writes and reads never meet; lists silently return 0).
   - **DEFERRED:** the prices `afterList` quantity-normalization filter (unit-conversion-aware min/max narrowing); `taxRateId`→taxRate resolution on price write; cf persistence.
+- **categories slice (done, committed).** `/api/catalog/categories` — the materialized-path tree:
+  - `CategoryHierarchy` (Lib) ports `lib/categoryHierarchy.ts` 1:1: `Compute` derives each node's depth/rootId/treePath/ancestorIds/childIds(name-sorted)/descendantIds/pathLabel (cycles + dangling parents collapse to roots); `RebuildAsync` writes those columns back to every in-scope row.
+  - **GET is hand-written** (not the factory list): loads in-scope categories, computes the hierarchy, serves `view=manage` (flat paged rows: parentName/childCount/descendantCount/pathLabel/treePath/depth + `{items,total,page,pageSize,totalPages,organizationId,tenantId}` envelope) or `view=tree` (nested roots). Filters status(all/active/inactive)/search(name|pathLabel)/ids.
+  - POST/PUT/DELETE reuse the CRUD factory via a new **`CrudConfig.MapList` flag** (added to Core, default true, additive/safe — gates the factory's list-GET mapping so a module can own the list path while reusing the mutation pipeline). Dispatch to `catalog.categories.{create,update,delete}`, each of which validates slug-uniqueness + parent-scope (400s) and calls `CategoryHierarchy.RebuildAsync` after the write. A category can't be its own parent (self-parent request clears the parent). Updates snapshot before/after; all undoable.
+  - `CatalogHttp` gained `AuthorizeAsync`/`Json` (for the hand-written GET). 7 HTTP tests (`CatalogCategoriesTests`). **326 .NET tests green.**
+  - **DEFERRED:** cf values on the manage rows (needs the cf codec); categories are not query-indexed (the factory's auto-index no-ops for them via the resolver fallback — the custom GET reads the base table directly).
 - **REMAINING (ranked, each a route-group slice + its command handlers + tests):**
-  1. **categories** (326) — materialized-path tree maintenance (ancestor/child/descendant recompute on create/move).
-  2. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
-  3. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
-  4. Products follow-ups: pricing decoration (now that prices/price-kinds exist), cf persistence, nested offers/unitPrice/option-schema on create.
+  1. **offers** (481) — per-channel offers + their prices; enables real offer/channel data on the products list.
+  2. **tags** (121), **product-unit-conversions** (195), **option-schemas** (186), **product-media** (102), **bulk-delete** (93).
+  3. Products follow-ups: pricing decoration (now that prices/price-kinds exist), cf persistence, nested offers/unitPrice/option-schema on create.
   - Also: `setup.ts` seeds (units, price kinds, examples) via `lib/seeds.ts`; subscribers/workers; i18n.

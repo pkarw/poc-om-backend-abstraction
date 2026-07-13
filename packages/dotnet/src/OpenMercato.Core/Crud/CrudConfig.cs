@@ -65,6 +65,14 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     public bool MapItemGet { get; init; } = true;
 
     /// <summary>
+    /// When true (default) the factory maps the built-in list route <c>GET /api/{base}</c>. A module sets
+    /// this to <c>false</c> when it ships a hand-written list endpoint at the same path (e.g. catalog
+    /// categories serve a bespoke tree/hierarchy GET) while still reusing the factory's POST/PUT/DELETE
+    /// pipeline — avoids a duplicate-route ambiguity.
+    /// </summary>
+    public bool MapList { get; init; } = true;
+
+    /// <summary>
     /// When true, list reads resolve matching record ids (filter/sort by base fields AND
     /// <c>cf:&lt;key&gt;</c> custom fields) via the query index (<see cref="ICrudIndexQuery"/>) before
     /// loading the base rows by id — the upstream <c>queryEngine</c> list path (spec 03 R49). When the
