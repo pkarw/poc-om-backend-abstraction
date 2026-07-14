@@ -118,6 +118,15 @@ public sealed class CrudConfig<TEntity> where TEntity : class
     /// <summary>Applies entity-specific filters + free-text search onto the query (spec 02 R21/R23/R45).</summary>
     public Func<IQueryable<TEntity>, CrudListQuery, CommandContext, IQueryable<TEntity>>? ApplyFilters { get; init; }
 
+    /// <summary>
+    /// Query-param names that are NOT list filters (case-insensitive): they are stripped from
+    /// <see cref="CrudListQuery.Filters"/> before the index/fallback list runs, so the generic index
+    /// engine never turns them into a doc-field <c>=</c> filter that matches nothing. Use for params the
+    /// route consumes itself (e.g. the products pricing-context <c>channelId</c>/<c>quantity</c>/… read by
+    /// the <see cref="ListHook"/>). Generalizes the query-index module's built-in non-doc-filter set.
+    /// </summary>
+    public IReadOnlyCollection<string>? NonFilterParams { get; init; }
+
     /// <summary>Projects an entity row into a mutable list-item map (so custom fields can be merged in).</summary>
     public required Func<TEntity, IDictionary<string, object?>> ProjectItem { get; init; }
 

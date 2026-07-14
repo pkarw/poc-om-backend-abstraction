@@ -64,6 +64,16 @@ public static class CrudRoute
 
         var query = CrudListQueryParser.Parse(http.Request, config.DefaultSortField, config.DefaultPageSize, config.MaxPageSize);
 
+        // Drop query params the route declares as non-filters (e.g. a pricing-context channelId/quantity)
+        // so the index list never treats them as a doc-field `=` filter that matches nothing and empties
+        // the list. The owning route applies their real semantics (here: the afterList pricing decorator).
+        if (config.NonFilterParams is { Count: > 0 } drop && query.Filters.Count > 0)
+        {
+            var kept = query.Filters.Where(kv => !drop.Contains(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+            if (kept.Count != query.Filters.Count) query = query with { Filters = kept };
+        }
+
         // GET /api/{base}?id=<uuid> is a LIST filtered to one id — OM returns the standard
         // {items,total,...} envelope (items:[record] or []), NOT a bare record. (The bare-record
         // shape is only for the path form GET /api/{base}/{id}.) Caught by OM integration TC-CUR-001.

@@ -75,6 +75,8 @@ public sealed class PricesRoutes : ICatalogRouteGroup
                 q = q.Where(p => p.CustomerGroupId == customerGroupId);
             return q;
         },
+        // Quantity-normalization context params (deferred) are not price doc fields.
+        NonFilterParams = new[] { "quantity", "quantityUnit" },
         ProjectItem = p => new Dictionary<string, object?>(CatalogIndexBaseRowResolver.ProjectPriceDoc(p)),
         CreatedEvent = "catalog.price.created",
         UpdatedEvent = "catalog.price.updated",

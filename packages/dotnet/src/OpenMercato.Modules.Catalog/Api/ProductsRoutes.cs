@@ -7,6 +7,7 @@ using OpenMercato.Core.Crud;
 using OpenMercato.Core.Data;
 using OpenMercato.Modules.Catalog.Commands;
 using OpenMercato.Modules.Catalog.Data;
+using OpenMercato.Modules.Catalog.Lib;
 
 namespace OpenMercato.Modules.Catalog.Api;
 
@@ -49,6 +50,13 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
         OrganizationIdSelector = p => p.OrganizationId,
         Sorts = Sorts(),
         ApplyFilters = ApplyFilters,
+        // Pricing-context + (deferred) association params are consumed by the afterList decorator / are not
+        // product doc fields — keep them out of the generic index filter matching.
+        NonFilterParams = new[]
+        {
+            "channelId", "channelIds", "offerId", "userId", "userGroupId", "customerId", "customerGroupId",
+            "quantity", "quantityUnit", "priceDate", "categoryIds", "tagIds",
+        },
         ProjectItem = ProjectListItem,
         ListHook = OverlayAssociationsAsync,
         CreatedEvent = "catalog.product.created",
@@ -202,6 +210,11 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
         var tagLabelById = tags.ToDictionary(t => t.Id, t => t.Label);
         var tagsByProduct = tagAssignments.GroupBy(a => a.ProductId).ToDictionary(g => g.Key, g => g.ToList());
 
+        // Pricing resolution: candidate prices (product-level + this product's variants) resolved against
+        // the request's PricingContext (upstream decorateProductsAfterList → item.pricing). Unit-conversion-
+        // normalized quantity is deferred (uses the raw quantity).
+        var pricingByProduct = await ResolveProductPricingAsync(db, http, tenantId: ctx.TenantId, productIds: ids);
+
         foreach (var item in items)
         {
             if (!Guid.TryParse(item.TryGetValue("id", out var v) ? v?.ToString() : null, out var pid)) continue;
@@ -247,9 +260,109 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
                 .Select(a => tagLabelById.TryGetValue(a.TagId, out var label) ? label : null)
                 .Where(l => !string.IsNullOrEmpty(l)).ToList();
 
-            // Pricing resolution deferred (CatalogPricingService not yet ported).
-            item["pricing"] = null;
+            item["pricing"] = pricingByProduct.TryGetValue(pid, out var pricing) ? pricing : null;
         }
+    }
+
+    /// <summary>Resolve the best applicable price per product (base + variant prices) for the request's
+    /// PricingContext, returning the upstream <c>item.pricing</c> shape keyed by product id.</summary>
+    private static async Task<Dictionary<Guid, object>> ResolveProductPricingAsync(
+        AppDbContext db, HttpContext http, Guid? tenantId, IReadOnlyList<Guid> productIds)
+    {
+        var result = new Dictionary<Guid, object>();
+        if (productIds.Count == 0) return result;
+
+        // Map each product's variants (variant price rows resolve back to the owning product).
+        var variants = await db.Set<CatalogProductVariant>().AsNoTracking()
+            .Where(vr => productIds.Contains(vr.ProductId) && vr.DeletedAt == null && (tenantId == null || vr.TenantId == tenantId))
+            .Select(vr => new { vr.Id, vr.ProductId }).ToListAsync();
+        var variantToProduct = variants.ToDictionary(vr => vr.Id, vr => vr.ProductId);
+        var variantIds = variantToProduct.Keys.ToList();
+
+        var priceRows = await db.Set<CatalogProductPrice>().AsNoTracking()
+            .Where(pr => (tenantId == null || pr.TenantId == tenantId) &&
+                ((pr.ProductId != null && productIds.Contains(pr.ProductId.Value)) ||
+                 (pr.VariantId != null && variantIds.Contains(pr.VariantId.Value))))
+            .ToListAsync();
+        if (priceRows.Count == 0) return result;
+
+        // Price-kind (code + promotion flag) + offer (channel) lookups for resolution.
+        var kindIds = priceRows.Select(pr => pr.PriceKindId).Distinct().ToList();
+        var kinds = (await db.Set<CatalogPriceKind>().AsNoTracking().Where(k => kindIds.Contains(k.Id)).ToListAsync())
+            .ToDictionary(k => k.Id);
+        var offerIds = priceRows.Where(pr => pr.OfferId is not null).Select(pr => pr.OfferId!.Value).Distinct().ToList();
+        var offerChannel = offerIds.Count == 0 ? new Dictionary<Guid, Guid>()
+            : (await db.Set<CatalogOffer>().AsNoTracking().Where(o => offerIds.Contains(o.Id)).ToListAsync())
+                .ToDictionary(o => o.Id, o => o.ChannelId);
+
+        var candidatesByProduct = new Dictionary<Guid, List<CatalogPricing.Candidate>>();
+        foreach (var pr in priceRows)
+        {
+            Guid? productId = pr.ProductId ?? (pr.VariantId is { } vid && variantToProduct.TryGetValue(vid, out var vp) ? vp : null);
+            if (productId is not { } pid) continue;
+            kinds.TryGetValue(pr.PriceKindId, out var kind);
+            Guid? offerChan = pr.OfferId is { } oid && offerChannel.TryGetValue(oid, out var ch) ? ch : null;
+            var candidate = new CatalogPricing.Candidate(
+                pr.Id, pr.VariantId, pr.ProductId, pr.OfferId, pr.PriceKindId,
+                kind?.Code, kind?.IsPromotion ?? false, offerChan,
+                pr.Kind, pr.CurrencyCode, pr.MinQuantity, pr.MaxQuantity,
+                pr.UnitPriceNet, pr.UnitPriceGross, pr.TaxRate, pr.TaxAmount,
+                pr.ChannelId, pr.UserId, pr.UserGroupId, pr.CustomerId, pr.CustomerGroupId,
+                pr.StartsAt, pr.EndsAt);
+            (candidatesByProduct.TryGetValue(pid, out var list) ? list : candidatesByProduct[pid] = new()).Add(candidate);
+        }
+
+        var context = BuildPricingContext(http);
+        foreach (var (pid, candidates) in candidatesByProduct)
+        {
+            var best = CatalogPricing.SelectBest(candidates, context);
+            if (best is null) continue;
+            result[pid] = new Dictionary<string, object?>
+            {
+                ["kind"] = CatalogPricing.ResolveKindCode(best),
+                ["price_kind_id"] = best.PriceKindId.ToString(),
+                ["price_kind_code"] = CatalogPricing.ResolveKindCode(best),
+                ["currency_code"] = best.CurrencyCode,
+                ["unit_price_net"] = best.UnitPriceNet,
+                ["unit_price_gross"] = best.UnitPriceGross,
+                ["min_quantity"] = best.MinQuantity,
+                ["max_quantity"] = best.MaxQuantity,
+                ["tax_rate"] = best.TaxRate,
+                ["tax_amount"] = best.TaxAmount,
+                ["scope"] = new Dictionary<string, object?>
+                {
+                    ["variant_id"] = best.VariantId?.ToString(),
+                    ["offer_id"] = best.OfferId?.ToString(),
+                    ["channel_id"] = CatalogPricing.ResolveChannelId(best)?.ToString(),
+                    ["user_id"] = best.UserId?.ToString(),
+                    ["user_group_id"] = best.UserGroupId?.ToString(),
+                    ["customer_id"] = best.CustomerId?.ToString(),
+                    ["customer_group_id"] = best.CustomerGroupId?.ToString(),
+                },
+            };
+        }
+        return result;
+    }
+
+    /// <summary>Build the pricing context from the list query (upstream buildPricingContext): channel (or
+    /// the single channelIds value), offer/user/customer scope, quantity (default 1), priceDate (default now).</summary>
+    private static CatalogPricing.PricingContext BuildPricingContext(HttpContext http)
+    {
+        var q = http.Request.Query;
+        Guid? G(string key) => Guid.TryParse(q[key].ToString(), out var g) ? g : null;
+
+        var channelId = G("channelId");
+        if (channelId is null && !string.IsNullOrWhiteSpace(q["channelIds"]))
+        {
+            var one = q["channelIds"].ToString().Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+            if (one.Count == 1 && Guid.TryParse(one[0], out var g)) channelId = g;
+        }
+        var quantity = int.TryParse(q["quantity"].ToString(), out var qty) && qty > 0 ? qty : 1;
+        var date = DateTimeOffset.TryParse(q["priceDate"].ToString(), System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : DateTimeOffset.UtcNow;
+
+        return new CatalogPricing.PricingContext(
+            channelId, G("offerId"), G("userId"), G("userGroupId"), G("customerId"), G("customerGroupId"), quantity, date);
     }
 }
 
