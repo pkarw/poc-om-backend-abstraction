@@ -154,4 +154,32 @@ public class CatalogOffersTests
             Body($"{{\"productId\":\"{Guid.NewGuid()}\",\"channelId\":\"{Guid.NewGuid()}\",\"title\":\"Orphan\"}}"));
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
+
+    [Fact]
+    public async Task Offer_list_resolves_product_channel_fallback_pricing()
+    {
+        await using var h = await BuildAsync();
+        var productId = await PostIdAsync(h.Client, "/api/catalog/products", "{\"title\":\"Fallback Priced\"}");
+        var kindId = await PostIdAsync(h.Client, "/api/catalog/price-kinds", "{\"code\":\"retail\",\"title\":\"Retail\"}");
+        var channelX = Guid.NewGuid();
+        var channelY = Guid.NewGuid();
+        var offerX = await PostIdAsync(h.Client, "/api/catalog/offers", $"{{\"productId\":\"{productId}\",\"channelId\":\"{channelX}\",\"title\":\"X\"}}");
+        var offerY = await PostIdAsync(h.Client, "/api/catalog/offers", $"{{\"productId\":\"{productId}\",\"channelId\":\"{channelY}\",\"title\":\"Y\"}}");
+
+        // Offer-less product prices: one channel-X-specific (priority 2), one default/no-channel (priority 1).
+        await PostIdAsync(h.Client, "/api/catalog/prices",
+            $"{{\"productId\":\"{productId}\",\"priceKindId\":\"{kindId}\",\"currencyCode\":\"USD\",\"unitPriceNet\":\"8.0000\",\"channelId\":\"{channelX}\"}}");
+        await PostIdAsync(h.Client, "/api/catalog/prices",
+            $"{{\"productId\":\"{productId}\",\"priceKindId\":\"{kindId}\",\"currencyCode\":\"USD\",\"unitPriceNet\":\"10.0000\"}}");
+
+        var items = (await ReadJson(await h.Client.GetAsync($"/api/catalog/offers?productId={productId}"))).GetProperty("items");
+        var itemX = items.EnumerateArray().First(e => e.GetProperty("id").GetString() == offerX);
+        var itemY = items.EnumerateArray().First(e => e.GetProperty("id").GetString() == offerY);
+
+        // Offer X's channel has a specific fallback price → the channel-specific one wins.
+        Assert.Equal(8.00m, itemX.GetProperty("productChannelPrice").GetProperty("unitPriceNet").GetDecimal());
+        Assert.Equal(1, itemX.GetProperty("productDefaultPrices").GetArrayLength());
+        // Offer Y's channel has no specific price → falls back to the default (no-channel) price.
+        Assert.Equal(10.00m, itemY.GetProperty("productChannelPrice").GetProperty("unitPriceNet").GetDecimal());
+    }
 }

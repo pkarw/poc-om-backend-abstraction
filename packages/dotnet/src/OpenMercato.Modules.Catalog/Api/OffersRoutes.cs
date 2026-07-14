@@ -14,12 +14,10 @@ namespace OpenMercato.Modules.Catalog.Api;
 /// Offers CRUD — the port of upstream <c>api/offers/route.ts</c>. Index-backed list, but the list item
 /// is <b>camelCase</b> (the OM offers UI shape) rather than the snake_case DataQuery shape of the other
 /// catalog lists. All methods require <c>sales.channels.manage</c> (a sales feature — offers live at the
-/// catalog/sales boundary). The <c>afterList</c> hook attaches the offer's <c>product</c> summary and its
-/// <c>prices</c> (with price-kind code/title/displayMode).
-///
-/// PARITY-TODO: the product-level fallback pricing decoration (<c>productChannelPrice</c> /
-/// <c>productDefaultPrices</c> — the channel-priority resolution over offer-less product/variant prices)
-/// is deferred with the rest of the catalog pricing resolution; those fields are emitted null/[].
+/// catalog/sales boundary). The <c>afterList</c> hook attaches the offer's <c>product</c> summary, its
+/// <c>prices</c> (with price-kind code/title/displayMode), and the product-level fallback pricing
+/// (<c>productChannelPrice</c> / <c>productDefaultPrices</c> — the channel-priority resolution over
+/// offer-less product/variant prices).
 /// </summary>
 public sealed class OffersRoutes : ICatalogRouteGroup
 {
@@ -177,15 +175,100 @@ public sealed class OffersRoutes : ICatalogRouteGroup
             });
         }
 
+        // Fallback product-channel pricing: offer-less prices at product OR default-variant level, bucketed
+        // per (product, channel) with a priority (variant>product, channel-specific>default). Higher
+        // priority wins per bucket; equal-priority rows accumulate (upstream assignFallbackPrice).
+        var fallbackByProduct = await BuildFallbackPricingAsync(db, tenantId, productIds, items, kindById);
+
         foreach (var item in items)
         {
             var pid = item.TryGetValue("productId", out var pv) ? pv?.ToString() : null;
             item["product"] = pid is not null && productById.TryGetValue(pid, out var prod) ? prod : null;
             var oid = Guid.TryParse(item.TryGetValue("id", out var iv) ? iv?.ToString() : null, out var g) ? g : Guid.Empty;
             item["prices"] = pricesByOffer.TryGetValue(oid, out var pr) ? pr : new List<object>();
-            // Fallback product-channel pricing deferred (see class remarks).
-            item["productChannelPrice"] = null;
-            item["productDefaultPrices"] = new List<object>();
+
+            List<object> effective = new();
+            if (Guid.TryParse(pid, out var productGuid) && fallbackByProduct.TryGetValue(productGuid, out var bucket))
+            {
+                var channelKey = item.TryGetValue("channelId", out var cv) && cv is string cs && cs.Length > 0 ? cs : DefaultChannelKey;
+                if (bucket.TryGetValue(channelKey, out var chGroup)) effective = chGroup.Prices;
+                else if (bucket.TryGetValue(DefaultChannelKey, out var defGroup)) effective = defGroup.Prices;
+            }
+            item["productChannelPrice"] = effective.Count > 0 ? effective[0] : null;
+            item["productDefaultPrices"] = effective;
         }
+    }
+
+    private const string DefaultChannelKey = "__default__";
+
+    private static async Task<Dictionary<Guid, Dictionary<string, (List<object> Prices, int Priority)>>> BuildFallbackPricingAsync(
+        AppDbContext db, Guid? tenantId, IReadOnlyList<Guid> productIds,
+        IReadOnlyList<IDictionary<string, object?>> items, IReadOnlyDictionary<Guid, CatalogPriceKind> knownKinds)
+    {
+        var map = new Dictionary<Guid, Dictionary<string, (List<object>, int)>>();
+        if (productIds.Count == 0) return map;
+
+        // Default variants (a variant-level fallback price resolves back to its owning product).
+        var defaultVariants = await db.Set<CatalogProductVariant>().AsNoTracking()
+            .Where(vr => productIds.Contains(vr.ProductId) && vr.IsDefault && vr.DeletedAt == null && (tenantId == null || vr.TenantId == tenantId))
+            .Select(vr => new { vr.Id, vr.ProductId }).ToListAsync();
+        var variantToProduct = defaultVariants.ToDictionary(vr => vr.Id, vr => vr.ProductId);
+        var defaultVariantIds = variantToProduct.Keys.ToList();
+
+        // Channels present on the listed offers (fallback prices scoped to those channels OR no channel).
+        var channelIds = items
+            .Select(i => Guid.TryParse(i.TryGetValue("channelId", out var v) ? v?.ToString() : null, out var g) ? g : (Guid?)null)
+            .Where(g => g is not null).Select(g => g!.Value).Distinct().ToList();
+
+        var fallback = await db.Set<CatalogProductPrice>().AsNoTracking()
+            .Where(pr => pr.OfferId == null && (tenantId == null || pr.TenantId == tenantId) &&
+                ((pr.ProductId != null && productIds.Contains(pr.ProductId.Value)) ||
+                 (pr.VariantId != null && defaultVariantIds.Contains(pr.VariantId.Value))) &&
+                (pr.ChannelId == null || channelIds.Contains(pr.ChannelId.Value)))
+            .ToListAsync();
+        if (fallback.Count == 0) return map;
+
+        var kindIds = fallback.Select(pr => pr.PriceKindId).Where(id => !knownKinds.ContainsKey(id)).Distinct().ToList();
+        var extraKinds = kindIds.Count == 0 ? new List<CatalogPriceKind>()
+            : await db.Set<CatalogPriceKind>().AsNoTracking().Where(k => kindIds.Contains(k.Id)).ToListAsync();
+        CatalogPriceKind? Kind(Guid id) => knownKinds.TryGetValue(id, out var k) ? k : extraKinds.FirstOrDefault(x => x.Id == id);
+
+        void Assign(Guid? productRef, Guid? channelRef, object payload, int priority)
+        {
+            if (productRef is not { } product) return;
+            var bucket = map.TryGetValue(product, out var b) ? b : map[product] = new Dictionary<string, (List<object>, int)>(StringComparer.Ordinal);
+            var channelKey = channelRef?.ToString() ?? DefaultChannelKey;
+            if (bucket.TryGetValue(channelKey, out var existing))
+            {
+                if (existing.Item2 > priority) return;
+                if (existing.Item2 == priority) { existing.Item1.Add(payload); return; }
+            }
+            bucket[channelKey] = (new List<object> { payload }, priority);
+        }
+
+        foreach (var pr in fallback)
+        {
+            var kind = Kind(pr.PriceKindId);
+            var payload = new Dictionary<string, object?>
+            {
+                ["priceKindId"] = pr.PriceKindId.ToString(),
+                ["priceKindCode"] = kind?.Code,
+                ["priceKindTitle"] = kind?.Title,
+                ["currencyCode"] = pr.CurrencyCode,
+                ["unitPriceNet"] = pr.UnitPriceNet,
+                ["unitPriceGross"] = pr.UnitPriceGross,
+                ["displayMode"] = kind?.DisplayMode ?? "excluding-tax",
+            };
+            if (pr.VariantId is { } vid)
+            {
+                var productRef = variantToProduct.TryGetValue(vid, out var vp) ? vp : pr.ProductId;
+                Assign(productRef, pr.ChannelId, payload, pr.ChannelId is not null ? 4 : 3);
+            }
+            else
+            {
+                Assign(pr.ProductId, pr.ChannelId, payload, pr.ChannelId is not null ? 2 : 1);
+            }
+        }
+        return map;
     }
 }

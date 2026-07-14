@@ -174,9 +174,10 @@ EF model + routes.
   - `ProductsRoutes.ResolveProductPricingAsync` (in the afterList) loads each product's candidate prices (product-level + its variants' prices), resolves the best against a `PricingContext` built from the query (channelId/offerId/user*/customer*/quantity/priceDate), and emits `item.pricing = { kind, price_kind_id, price_kind_code, currency_code, unit_price_net/gross, min/max_quantity, tax_rate/amount, scope:{variant_id, offer_id, channel_id, user_*, customer_*} }`.
   - **New additive Core flag `CrudConfig.NonFilterParams`**: query-param names stripped from `CrudListQuery.Filters` before the index/fallback list, so a pricing-context param (channelId/quantity/…) is never turned into a doc-field `=` filter that empties the list (generalizes the query-index module's built-in non-doc-filter set). Products declares the pricing-context + deferred-association params; prices declares quantity/quantityUnit.
   - 3 HTTP tests (`CatalogPricingDecorationTests`): base price, variant-price-wins specificity, channel-scoped applicability. **339 .NET tests green.**
-  - **DEFERRED:** unit-conversion-normalized quantity (uses raw quantity); the offers `productChannelPrice`/`productDefaultPrices` fallback decoration (still null/[]).
+  - **DEFERRED:** unit-conversion-normalized quantity (uses raw quantity).
+- **offers fallback pricing decoration (done, committed).** `productChannelPrice`/`productDefaultPrices` on the offers list:
+  - `OffersRoutes.BuildFallbackPricingAsync` ports the upstream `assignFallbackPrice` priority system over **offer-less** prices at product or default-variant level, bucketed per (product, channel): priority 4 = variant+channel, 3 = variant+default, 2 = product+channel, 1 = product+default. Higher priority wins per bucket; equal-priority rows accumulate. Each offer row resolves its channel's bucket (else the `__default__` bucket) → `productChannelPrice` = first, `productDefaultPrices` = the group. 1 HTTP test (channel-specific vs default fallback). **340 .NET tests green.**
 - **REMAINING:**
-  1. Offers `productChannelPrice`/`productDefaultPrices` fallback decoration (the channel-priority resolution over offer-less product/variant prices — `CatalogPricing` can be reused for the matching).
-  2. Unit-conversion-normalized quantity in the products/prices pricing (needs the unit-codes canonicalization + product default-unit conversion).
-  3. cf (`cf_*`) persistence across the catalog write path; nested offers/unitPrice/option-schema materialization on product create.
-  4. bulk-delete (needs progress + queue); product-media attachments (needs attachments module); `setup.ts` seeds (units, price kinds, examples); subscribers/workers; i18n.
+  1. Unit-conversion-normalized quantity in the products/prices pricing (needs the unit-codes canonicalization + product default-unit conversion).
+  2. cf (`cf_*`) persistence across the catalog write path; nested offers/unitPrice/option-schema materialization on product create.
+  3. bulk-delete (needs progress + queue); product-media attachments (needs attachments module); `setup.ts` seeds (units, price kinds, examples); subscribers/workers; i18n.
