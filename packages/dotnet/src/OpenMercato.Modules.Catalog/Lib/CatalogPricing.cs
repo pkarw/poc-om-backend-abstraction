@@ -10,10 +10,11 @@ namespace OpenMercato.Modules.Catalog.Lib;
 /// </summary>
 public static class CatalogPricing
 {
-    /// <summary>Resolution context (upstream <c>PricingContext</c>).</summary>
+    /// <summary>Resolution context (upstream <c>PricingContext</c>). Quantity is decimal so a
+    /// unit-conversion-normalized (fractional) quantity compares correctly to the int min/max windows.</summary>
     public sealed record PricingContext(
         Guid? ChannelId, Guid? OfferId, Guid? UserId, Guid? UserGroupId,
-        Guid? CustomerId, Guid? CustomerGroupId, int Quantity, DateTimeOffset Date);
+        Guid? CustomerId, Guid? CustomerGroupId, decimal Quantity, DateTimeOffset Date);
 
     /// <summary>A flattened candidate price row with the fields resolution needs (price + its price-kind
     /// code/promotion flag + the linked offer's channel).</summary>

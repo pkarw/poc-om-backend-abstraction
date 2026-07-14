@@ -313,9 +313,14 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
         }
 
         var context = BuildPricingContext(http);
+        // Per-product unit-conversion-normalized quantity (upstream normalizedQuantityForPricing): when
+        // ?quantityUnit differs from a product's default_unit and the product has an active conversion, the
+        // context quantity is scaled by that factor for this product only.
+        var normalizedQuantity = await ResolveNormalizedQuantitiesAsync(db, http, tenantId, productIds, context.Quantity);
         foreach (var (pid, candidates) in candidatesByProduct)
         {
-            var best = CatalogPricing.SelectBest(candidates, context);
+            var productContext = normalizedQuantity.TryGetValue(pid, out var nq) ? context with { Quantity = nq } : context;
+            var best = CatalogPricing.SelectBest(candidates, productContext);
             if (best is null) continue;
             result[pid] = new Dictionary<string, object?>
             {
@@ -357,12 +362,46 @@ public sealed class ProductsRoutes : ICatalogRouteGroup
             var one = q["channelIds"].ToString().Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
             if (one.Count == 1 && Guid.TryParse(one[0], out var g)) channelId = g;
         }
-        var quantity = int.TryParse(q["quantity"].ToString(), out var qty) && qty > 0 ? qty : 1;
+        var quantity = decimal.TryParse(q["quantity"].ToString(), System.Globalization.CultureInfo.InvariantCulture, out var qty) && qty > 0 ? qty : 1m;
         var date = DateTimeOffset.TryParse(q["priceDate"].ToString(), System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : DateTimeOffset.UtcNow;
 
         return new CatalogPricing.PricingContext(
             channelId, G("offerId"), G("userId"), G("userGroupId"), G("customerId"), G("customerGroupId"), quantity, date);
+    }
+
+    /// <summary>Per-product normalized quantity for pricing (upstream <c>normalizedQuantityForPricing</c>):
+    /// when <c>?quantityUnit</c> is set and differs from a product's canonical <c>default_unit</c>, scale the
+    /// context quantity by the product's active conversion factor for that unit. Products without a matching
+    /// conversion (or whose base unit equals the requested unit) are omitted (keep the raw quantity).</summary>
+    private static async Task<Dictionary<Guid, decimal>> ResolveNormalizedQuantitiesAsync(
+        AppDbContext db, HttpContext http, Guid? tenantId, IReadOnlyList<Guid> productIds, decimal quantity)
+    {
+        var result = new Dictionary<Guid, decimal>();
+        var quantityUnitKey = CatalogUnitCodes.Canonicalize(http.Request.Query["quantityUnit"].ToString());
+        if (quantityUnitKey is null || productIds.Count == 0) return result;
+
+        var products = await db.Set<CatalogProduct>().AsNoTracking()
+            .Where(p => productIds.Contains(p.Id) && (tenantId == null || p.TenantId == tenantId))
+            .Select(p => new { p.Id, p.DefaultUnit }).ToListAsync();
+
+        var conversions = await db.Set<CatalogProductUnitConversion>().AsNoTracking()
+            .Where(c => productIds.Contains(c.ProductId) && c.IsActive && c.DeletedAt == null && (tenantId == null || c.TenantId == tenantId))
+            .Select(c => new { c.ProductId, c.UnitCode, c.ToBaseFactor }).ToListAsync();
+        var factorByProduct = new Dictionary<Guid, decimal>();
+        foreach (var c in conversions)
+            if (c.ToBaseFactor > 0 && CatalogUnitCodes.Canonicalize(c.UnitCode) == quantityUnitKey)
+                factorByProduct[c.ProductId] = c.ToBaseFactor;
+
+        foreach (var p in products)
+        {
+            var baseUnit = CatalogUnitCodes.Canonicalize(p.DefaultUnit);
+            if (baseUnit is null || baseUnit == quantityUnitKey) continue;
+            if (!factorByProduct.TryGetValue(p.Id, out var factor)) continue;
+            var normalized = quantity * factor;
+            if (normalized > 0) result[p.Id] = normalized;
+        }
+        return result;
     }
 }
 

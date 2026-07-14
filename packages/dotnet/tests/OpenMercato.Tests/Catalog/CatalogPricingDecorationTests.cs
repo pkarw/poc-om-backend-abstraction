@@ -144,4 +144,30 @@ public class CatalogPricingDecorationTests
         Assert.Equal(12.00m, withChannel.GetProperty("pricing").GetProperty("unit_price_net").GetDecimal());
         Assert.Equal(channelId.ToString(), withChannel.GetProperty("pricing").GetProperty("scope").GetProperty("channel_id").GetString());
     }
+
+    [Fact]
+    public async Task QuantityUnit_conversion_reaches_a_bulk_tier()
+    {
+        await using var h = await BuildAsync();
+        // A product sold by kg, with a "box" conversion of 12.5 kg per box.
+        var productId = await PostIdAsync(h.Client, "/api/catalog/products", "{\"title\":\"By Weight\",\"defaultUnit\":\"kg\"}");
+        await PostIdAsync(h.Client, "/api/catalog/product-unit-conversions",
+            $"{{\"productId\":\"{productId}\",\"unitCode\":\"box\",\"toBaseFactor\":\"12.5\"}}");
+        var kindId = await PostIdAsync(h.Client, "/api/catalog/price-kinds", "{\"code\":\"retail\",\"title\":\"Retail\"}");
+        // Base tier (min 1) and a bulk tier (min 10).
+        await PostIdAsync(h.Client, "/api/catalog/prices",
+            $"{{\"productId\":\"{productId}\",\"priceKindId\":\"{kindId}\",\"currencyCode\":\"USD\",\"unitPriceNet\":\"10.0000\",\"minQuantity\":1}}");
+        await PostIdAsync(h.Client, "/api/catalog/prices",
+            $"{{\"productId\":\"{productId}\",\"priceKindId\":\"{kindId}\",\"currencyCode\":\"USD\",\"unitPriceNet\":\"8.0000\",\"minQuantity\":10}}");
+
+        // qty=1 kg → only the base tier applies.
+        var baseTier = (await ReadJson(await h.Client.GetAsync("/api/catalog/products?quantity=1")))
+            .GetProperty("items").EnumerateArray().First(e => e.GetProperty("id").GetString() == productId);
+        Assert.Equal(10.00m, baseTier.GetProperty("pricing").GetProperty("unit_price_net").GetDecimal());
+
+        // qty=1 box = 12.5 kg → the bulk tier (min 10) now applies and wins.
+        var bulkTier = (await ReadJson(await h.Client.GetAsync("/api/catalog/products?quantity=1&quantityUnit=box")))
+            .GetProperty("items").EnumerateArray().First(e => e.GetProperty("id").GetString() == productId);
+        Assert.Equal(8.00m, bulkTier.GetProperty("pricing").GetProperty("unit_price_net").GetDecimal());
+    }
 }
